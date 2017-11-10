@@ -61,7 +61,8 @@ THE SOFTWARE.
 #define DEADZONE    25                // us
 
 int32_t inputpulsewidth = PWM_NEUTRAL;
-// bool    forward;
+bool    ledon   = false;
+bool    stopped = true;
 
 
 void setup() {
@@ -80,9 +81,13 @@ void setup() {
   digitalWrite(SLEEPN, HIGH);
 
   digitalWrite(LED, LOW);
+digitalWrite(OC1A_PIN, LOW);
 
-      OCR1A = MAX_COUNT;
-      OCR1B = (1.0 - 0.5) * MAX_COUNT;
+  OCR1A = MAX_COUNT;
+  OCR1B = MAX_COUNT;
+// while (1) {delay(100);}
+//   digitalWrite(OUT1, HIGH);
+//   digitalWrite(OUT2, LOW);
 }
 
 void loop() {
@@ -97,8 +102,8 @@ void loop() {
     velocity = 0;
   }
 
-velocity = 0.5;
-/*
+// velocity = 0.5;
+///*
   float speed   = abs(velocity);
   bool  forward = (velocity > 0);
 
@@ -107,7 +112,9 @@ velocity = 0.5;
     // Coast to a stop.  No point in hitting the brakes, there's no control
     OCR1A = MAX_COUNT;
     OCR1B = MAX_COUNT;
+    stopped = true;
   } else {
+    stopped = false;
     if (forward) {
       OCR1A = (1.0 - speed) * MAX_COUNT;
       OCR1B = MAX_COUNT;
@@ -117,27 +124,28 @@ velocity = 0.5;
     }
   }
 //*/
+//   digitalWrite(LED, ledon);
   delay(100);
 }
 
 
 // Set the motor off and driving
-void setMotor(float drive) {
-  float speed = abs(drive);
-
-  if ( speed < 0.05 ) {
-    OCR1A = MAX_COUNT;  // coast
-    OCR1B = MAX_COUNT;  // coast
-  } else if ( speed <= 1.0 ) {
-    if ( drive > 0.0 ) {
-      OCR1A = speed * (MAX_COUNT + 1) - 1;
-      OCR1B = 0;
-    } else {
-      OCR1A = 0;
-      OCR1B = speed * (MAX_COUNT + 1) - 1;
-    }
-  }
-}
+// void setMotor(float drive) {
+//   float speed = abs(drive);
+//
+//   if ( speed < 0.05 ) {
+//     OCR1A = MAX_COUNT;  // coast
+//     OCR1B = MAX_COUNT;  // coast
+//   } else if ( speed <= 1.0 ) {
+//     if ( drive > 0.0 ) {
+//       OCR1A = speed * (MAX_COUNT + 1) - 1;
+//       OCR1B = 0;
+//     } else {
+//       OCR1A = 0;
+//       OCR1B = speed * (MAX_COUNT + 1) - 1;
+//     }
+//   }
+// }
 
 void initializePWMReader() {
   // Stop interrupts while changing timer settings
@@ -153,13 +161,15 @@ void initializePWMReader() {
 //   bitSet(TCCR1A, COM1B0);
 //   bitSet(TCCR1A, COM1B1);
   // Set normal mode (10-bit)
-  bitClear(TCCR1A, WGM10);
-  bitClear(TCCR1A, WGM11);
-  bitClear(TCCR1B, WGM12);
-  bitClear(TCCR1B, WGM13);
+//   bitSet(TCCR1A, WGM10);
+//   bitSet(TCCR1A, WGM11);
+//   bitSet(TCCR1B, WGM12);
+//   bitSet(TCCR1B, WGM13);
 
   // Set timer1 clock source to prescaler 1
   bitSet(TCCR1B, CS10);
+  bitClear(TCCR1B, CS11);
+  bitClear(TCCR1B, CS12);
 
   // Enable timer1 Input Capture Interrupt
   bitSet(TIMSK1, ICIE1);
@@ -190,9 +200,9 @@ void initializePWMReader() {
   sei();
 }
 
-///////////////////////////////
-// Interrupt Service Routine //
-///////////////////////////////
+////////////////////////////////
+// Interrupt Service Routines //
+////////////////////////////////
 
 namespace {
   int16_t pwmstart = 0;
@@ -211,9 +221,6 @@ SIGNAL(TIM1_CAPT_vect) {
 
     // Reset Input Capture Flag
     bitSet(TIFR1, ICF1);
-
-    // Clear timer1
-//     TCNT1 = 0;
 
 // digitalWrite(LED, HIGH);
   } else {
@@ -237,15 +244,25 @@ SIGNAL(TIM1_CAPT_vect) {
 //*/
 
 // Triggered when TCNT1 == OCR1B
-// SIGNAL(TIM1_COMPB_vect) {
-//   // End pulse
-//   digitalWrite(OC1B_PIN, LOW);
-// }
+SIGNAL(TIM1_COMPB_vect) {
+  // Start pulse
+  if (OCR1B < 0.95*MAX_COUNT) {
+    digitalWrite(OC1B_PIN, HIGH);
+  }
+}
+
+// Triggered when TCNT1 == OCR1A
+SIGNAL(TIM1_COMPA_vect) {
+  // Start pulse
+  if (OCR1A < 0.95*MAX_COUNT) {
+    digitalWrite(OC1A_PIN, HIGH);
+  }
+}
 
 // Triggered when timer1 overflows
 SIGNAL(TIM1_OVF_vect) {
     // End pulse
-digitalWrite(LED, HIGH);
+// ledon = true;
   digitalWrite(OC1A_PIN, LOW);
   digitalWrite(OC1B_PIN, LOW);
 }
