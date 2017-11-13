@@ -50,7 +50,7 @@ THE SOFTWARE.
 #define PERIOD      1000000/PWM_FREQ  // us
 #define PRESCALE    1                 // must match TCCR1B settings
 #define CNT_PER_US  (F_CPU/PRESCALE/1000000L) // timer counts
-#define MAX_COUNT   0xFFFF            // max unsigned 16-bit integer
+#define MAX_COUNT   0xFFFF/0xF           // max unsigned 16-bit integer
 // #define MAX_COUNT   0x03FFL           // max unsigned 10-bit integer
 
 // PWM INPUT CHARACTERISTICS
@@ -59,10 +59,12 @@ THE SOFTWARE.
 #define PWM_NEUTRAL 1500              // us
 #define HALF_RANGE  500               // us
 #define DEADZONE    25                // us
+#define INPUT_MAX   2500              // us
+#define INPUT_MIN   500               // us
 
 int32_t inputpulsewidth = PWM_NEUTRAL;
-bool    ledon   = false;
-bool    stopped = true;
+float   velocity  = 0;
+bool    stopped   = true;
 
 
 void setup() {
@@ -80,72 +82,14 @@ void setup() {
   // Wake up A4955
   digitalWrite(SLEEPN, HIGH);
 
+  // Turn off LED (for testing)
   digitalWrite(LED, LOW);
-digitalWrite(OC1A_PIN, LOW);
-
-  OCR1A = MAX_COUNT;
-  OCR1B = MAX_COUNT;
-// while (1) {delay(100);}
-//   digitalWrite(OUT1, HIGH);
-//   digitalWrite(OUT2, LOW);
 }
 
 void loop() {
-  float velocity;
-
-  // Constrain the PWM input
-  if ( inputpulsewidth >= PWM_MIN && inputpulsewidth <= PWM_MAX ) {
-    // Map valid PWM signals to [-1 to 1]
-    velocity = (float) (inputpulsewidth - PWM_NEUTRAL)/HALF_RANGE;
-  } else {
-    // Stop motor if input is invalid
-    velocity = 0;
-  }
-
-// velocity = 0.5;
-///*
-  float speed   = abs(velocity);
-  bool  forward = (velocity > 0);
-
-  // Check deadband
-  if ( speed < 0.05 ) {
-    // Coast to a stop.  No point in hitting the brakes, there's no control
-    OCR1A = MAX_COUNT;
-    OCR1B = MAX_COUNT;
-    stopped = true;
-  } else {
-    stopped = false;
-    if (forward) {
-      OCR1A = (1.0 - speed) * MAX_COUNT;
-      OCR1B = MAX_COUNT;
-    } else {
-      OCR1A = MAX_COUNT;
-      OCR1B = (1.0 - speed) * MAX_COUNT;
-    }
-  }
-//*/
-//   digitalWrite(LED, ledon);
   delay(100);
 }
 
-
-// Set the motor off and driving
-// void setMotor(float drive) {
-//   float speed = abs(drive);
-//
-//   if ( speed < 0.05 ) {
-//     OCR1A = MAX_COUNT;  // coast
-//     OCR1B = MAX_COUNT;  // coast
-//   } else if ( speed <= 1.0 ) {
-//     if ( drive > 0.0 ) {
-//       OCR1A = speed * (MAX_COUNT + 1) - 1;
-//       OCR1B = 0;
-//     } else {
-//       OCR1A = 0;
-//       OCR1B = speed * (MAX_COUNT + 1) - 1;
-//     }
-//   }
-// }
 
 void initializePWMReader() {
   // Stop interrupts while changing timer settings
@@ -160,10 +104,10 @@ void initializePWMReader() {
 //   bitSet(TCCR1A, COM1A1);
 //   bitSet(TCCR1A, COM1B0);
 //   bitSet(TCCR1A, COM1B1);
-  // Set normal mode (10-bit)
+  // Set CTC (OCR1A)
 //   bitSet(TCCR1A, WGM10);
 //   bitSet(TCCR1A, WGM11);
-//   bitSet(TCCR1B, WGM12);
+  bitSet(TCCR1B, WGM12);
 //   bitSet(TCCR1B, WGM13);
 
   // Set timer1 clock source to prescaler 1
@@ -194,7 +138,7 @@ void initializePWMReader() {
   bitSet(TIFR1, ICF1);
 
   // Set timer1 TOP to max value
-//   OCR1A = MAX_COUNT;
+  OCR1A = MAX_COUNT;
 
   // Done setting timers -> allow interrupts again
   sei();
@@ -206,6 +150,7 @@ void initializePWMReader() {
 
 namespace {
   int16_t pwmstart = 0;
+  int8_t  ncycles  = 0;
 }
 
 // Triggered when a change is detected on ICP1
@@ -215,22 +160,17 @@ SIGNAL(TIM1_CAPT_vect) {
     // If we caught the rising edge
     // Save start time and clear ncycles
     pwmstart = ICR1;
+    ncycles  = 0;
 
     // Reset for falling edge
     bitClear(TCCR1B, ICES1);  // detect falling edge
 
     // Reset Input Capture Flag
     bitSet(TIFR1, ICF1);
-
-// digitalWrite(LED, HIGH);
   } else {
     // If we caught the falling edge
     // Save input pulse width
-    if(ICR1 > pwmstart) {
-      inputpulsewidth = (ICR1 - pwmstart)/CNT_PER_US;
-    } else {
-      inputpulsewidth = ((MAX_COUNT - pwmstart) + ICR1 + 1)/CNT_PER_US;
-    }
+    float pulsein = (ICR1 - pwmstart + ncycles*(MAX_COUNT+1) + 1)/CNT_PER_US;
 
     // Reset for rising edge
     bitSet(TCCR1B, ICES1);  // detect rising edge
@@ -238,31 +178,40 @@ SIGNAL(TIM1_CAPT_vect) {
     // Reset Input Capture Flag
     bitSet(TIFR1, ICF1);
 
-//  digitalWrite(LED, LOW);
+    // Constrain the PWM input
+    if ( pulsein >= INPUT_MIN && pulsein <= INPUT_MAX ) {
+      // Map valid PWM signals to [-1 to 1]
+      velocity = constrain((float)(pulsein - PWM_NEUTRAL)/HALF_RANGE,
+                           -1.0f, 1.0f);
+      OCR1B = (1.0f - abs(velocity)) * MAX_COUNT;
+    } else {
+      // Stop motor if input is invalid
+      velocity = 0;
+      OCR1B = MAX_COUNT;
+    }
   }
 }
 //*/
 
 // Triggered when TCNT1 == OCR1B
 SIGNAL(TIM1_COMPB_vect) {
-  // Start pulse
-  if (OCR1B < 0.95*MAX_COUNT) {
+  // Figure out which direction to turn
+  if (velocity > 0.05) {
+    // Start pulse on OC1A (forward)
+    digitalWrite(OC1A_PIN, HIGH);
+  }
+  if ( velocity < -0.05) {
+    // Start pulse on OC1B (reverse)
     digitalWrite(OC1B_PIN, HIGH);
   }
 }
 
-// Triggered when TCNT1 == OCR1A
+// Triggered when TCNT1 == OCR1A (TOP)
 SIGNAL(TIM1_COMPA_vect) {
-  // Start pulse
-  if (OCR1A < 0.95*MAX_COUNT) {
-    digitalWrite(OC1A_PIN, HIGH);
-  }
-}
-
-// Triggered when timer1 overflows
-SIGNAL(TIM1_OVF_vect) {
-    // End pulse
-// ledon = true;
+  // End pulse
   digitalWrite(OC1A_PIN, LOW);
   digitalWrite(OC1B_PIN, LOW);
+
+  // Increment ncycles
+  ncycles++;
 }
