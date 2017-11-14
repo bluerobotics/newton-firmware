@@ -50,7 +50,7 @@ THE SOFTWARE.
 #define PERIOD      1000000/PWM_FREQ  // us
 #define PRESCALE    1                 // must match TCCR1B settings
 #define CNT_PER_US  (F_CPU/PRESCALE/1000000L) // timer counts
-#define MAX_COUNT   0xFFFF/0xF           // max unsigned 16-bit integer
+#define MAX_COUNT   0xFFFF/0x10           // max unsigned 16-bit integer
 // #define MAX_COUNT   0x03FFL           // max unsigned 10-bit integer
 
 // PWM INPUT CHARACTERISTICS
@@ -62,14 +62,14 @@ THE SOFTWARE.
 #define INPUT_MAX   2500              // us
 #define INPUT_MIN   500               // us
 
-int32_t inputpulsewidth = PWM_NEUTRAL;
+int32_t pulsein = PWM_NEUTRAL;
 float   velocity  = 0;
 bool    stopped   = true;
 
 
 void setup() {
   // Set up pin modes
-  pinMode(PWM,        INPUT);
+  pinMode(PWM,        INPUT_PULLUP);
   pinMode(LED,        OUTPUT);
   pinMode(CURRENT_IN, INPUT);
   pinMode(SLEEPN,     OUTPUT);
@@ -84,10 +84,26 @@ void setup() {
 
   // Turn off LED (for testing)
   digitalWrite(LED, LOW);
+
+// velocity = 0.1;
+// OCR1B = (1.0f - abs(velocity)) * MAX_COUNT;
+// while(1) { delay(100);}
 }
 
 void loop() {
-  delay(100);
+  delay(10);
+    // Constrain the PWM input
+    if ( pulsein >= INPUT_MIN && pulsein <= INPUT_MAX ) {
+      // Map valid PWM signals to [-1 to 1]
+      pulsein  = constrain(pulsein, PWM_MIN, PWM_MAX);
+      velocity = (float)(pulsein - PWM_NEUTRAL)/HALF_RANGE;
+// velocity = 0.1;
+      OCR1B = constrain(abs(velocity) * MAX_COUNT, 0, 0.9*MAX_COUNT);
+    } else {
+      // Stop motor if input is invalid
+      velocity = 0;
+      OCR1B = 0;
+    }
 }
 
 
@@ -125,10 +141,10 @@ void initializePWMReader() {
   bitSet(TIMSK1, OCIE1A);
 
   // Enable timer1 Overflow Interrupt
-  bitSet(TIMSK1, TOIE1);
+//   bitSet(TIMSK1, TOIE1);
 
   // Enable timer1 Input Capture Noise Canceler
-  bitSet(TCCR1B, ICNC1);
+//   bitSet(TCCR1B, ICNC1);
 
   // Set timer1 Input Capture Edge Select
   // 0: falling edge, 1: rising edge
@@ -149,8 +165,8 @@ void initializePWMReader() {
 ////////////////////////////////
 
 namespace {
-  int16_t pwmstart = 0;
-  int8_t  ncycles  = 0;
+  uint16_t pwmstart = 0;
+  uint8_t  ncycles  = 0;
 }
 
 // Triggered when a change is detected on ICP1
@@ -170,48 +186,39 @@ SIGNAL(TIM1_CAPT_vect) {
   } else {
     // If we caught the falling edge
     // Save input pulse width
-    float pulsein = (ICR1 - pwmstart + ncycles*(MAX_COUNT+1) + 1)/CNT_PER_US;
+    pulsein = (uint32_t)( ICR1 + ncycles*(MAX_COUNT+1) - pwmstart )/CNT_PER_US;
 
     // Reset for rising edge
     bitSet(TCCR1B, ICES1);  // detect rising edge
 
     // Reset Input Capture Flag
     bitSet(TIFR1, ICF1);
-
-    // Constrain the PWM input
-    if ( pulsein >= INPUT_MIN && pulsein <= INPUT_MAX ) {
-      // Map valid PWM signals to [-1 to 1]
-      velocity = constrain((float)(pulsein - PWM_NEUTRAL)/HALF_RANGE,
-                           -1.0f, 1.0f);
-      OCR1B = (1.0f - abs(velocity)) * MAX_COUNT;
-    } else {
-      // Stop motor if input is invalid
-      velocity = 0;
-      OCR1B = MAX_COUNT;
-    }
   }
 }
 //*/
 
-// Triggered when TCNT1 == OCR1B
-SIGNAL(TIM1_COMPB_vect) {
-  // Figure out which direction to turn
-  if (velocity > 0.05) {
-    // Start pulse on OC1A (forward)
-    digitalWrite(OC1A_PIN, HIGH);
-  }
-  if ( velocity < -0.05) {
-    // Start pulse on OC1B (reverse)
-    digitalWrite(OC1B_PIN, HIGH);
-  }
-}
-
 // Triggered when TCNT1 == OCR1A (TOP)
 SIGNAL(TIM1_COMPA_vect) {
-  // End pulse
-  digitalWrite(OC1A_PIN, LOW);
-  digitalWrite(OC1B_PIN, LOW);
+  // Figure out which direction to turn
+  if (velocity > 0.10) {
+    // Start pulse on OC1A (forward)
+    bitSet(PORTA,OC1A_PIN);
+//     digitalWrite(OC1A_PIN, HIGH);
+  }
+  if ( velocity < -0.10) {
+    // Start pulse on OC1B (reverse)
+    bitSet(PORTA,OC1B_PIN);
+//     digitalWrite(OC1B_PIN, HIGH);
+  }
 
   // Increment ncycles
   ncycles++;
+}
+
+// Triggered when TCNT1 == OCR1B
+SIGNAL(TIM1_COMPB_vect) {
+  // End pulse
+  PORTA &= B10011111;
+//   digitalWrite(OC1A_PIN, LOW);
+//   digitalWrite(OC1B_PIN, LOW);
 }
