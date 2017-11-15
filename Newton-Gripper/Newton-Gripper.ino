@@ -33,6 +33,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 -------------------------------*/
 
+#include "LPFilter.h"
+
 // HARDWARE PIN DEFINITIONS
 #define PWM_IN      ICP1_PIN
 #define LED         4
@@ -43,6 +45,12 @@ THE SOFTWARE.
 
 // HARDWARE TIMER PINS
 #define ICP1_PIN    7
+
+// CURRENT SENSOR
+#define R_SENSE     0.005f            // ohms
+
+// PWM INPUT TIMEOUT
+#define INPUT_TOUT  0.500f            // s
 
 // PWM READ DEFINITIONS
 #define PWM_FREQ    50                // Hz
@@ -62,8 +70,15 @@ THE SOFTWARE.
 #define OUTPUT_DZ   0.10f             // speed 0.0~1.0 (deadzone)
 #define MAX_DUTY    0.90f             // Limits duty cycle to save (12 V) motor
 
+// FILTER PARAMETERS
+#define FILTER_DT   0.050f            // s
+#define FILTER_TAU  0.200f            // s
+
 int32_t pulsein = PWM_NEUTRAL;
 float   velocity  = 0;
+int     limit     = 0;    // 0: no limit, 1: forward limit, -1: reverse limit
+LPFilter* outputfilter;
+LPFilter* currentfilter;
 
 
 void setup() {
@@ -78,6 +93,12 @@ void setup() {
   // Initialize PWM input reader
   initializePWMReader();
 
+  // Initialize output low-pass filter
+  outputfilter = new LPFilter(FILTER_DT, FILTER_TAU);
+
+  // Initialize current input low-pass filter
+  currentfilter = new LPFilter(FILTER_DT, 0.50f);
+
   // Wake up A4955
   digitalWrite(SLEEPN, HIGH);
 
@@ -86,7 +107,8 @@ void setup() {
 }
 
 void loop() {
-  delay(10);
+  cli();
+
   // Reject signals that are way off (i.e. const. 0 V, const. +5 V, noise)
   if ( pulsein >= INPUT_MIN && pulsein <= INPUT_MAX ) {
     // Clamp PWM inputs to [PWM_MIN, PWM_MAX] range
@@ -98,11 +120,37 @@ void loop() {
     // Stop motor if input is invalid
     velocity = 0;
   }
+  // Filter velocity
+  velocity = outputfilter->step(velocity);
+
   // Set timer (do not allow speeds above MAX_DUTY)
   float speed = abs(velocity);
   OCR1B = constrain(speed * MAX_DUTY * MAX_COUNT, 0, MAX_DUTY * MAX_COUNT);
+
+  // Current sensor resolution: ~65 mA
+//   digitalWrite(LED, currentfilter->step(readCurrent()) > 0.130f);
+  if (currentfilter->step(readCurrent()) > currentLimit(speed)) {
+    if ( velocity > 0.0f ) {
+      limit = 1;
+    } else if ( velocity < 0.0f ) {
+      limit = -1;
+    }
+  } else if ( velocity * limit < 0.0f ) {
+    // We're going the opposite direction from the limit, so clear limit
+    limit = 0;
+  }
+
+  if ( limit != 0 ) {
+    velocity = 0.0f;
+  }
+
+  sei();
+  delay(FILTER_DT*1000);
 }
 
+float currentLimit(float speed) {
+  return 0.500f;
+}
 
 void initializePWMReader() {
   // Stop interrupts while changing timer settings
@@ -144,6 +192,12 @@ void initializePWMReader() {
 
   // Done setting timers -> allow interrupts again
   sei();
+}
+
+// Read current (in amperes)
+float readCurrent() {
+  // Reported voltage is 10x actual drop across the sense resistor
+  return (analogRead(CURRENT_IN)*3.3f/1023.0f/10.0f)/R_SENSE;
 }
 
 ////////////////////////////////
