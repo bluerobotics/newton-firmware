@@ -34,6 +34,7 @@ THE SOFTWARE.
 -------------------------------*/
 
 #include "LPFilter.h"
+#include "LPFilter2.h"
 
 // HARDWARE PIN DEFINITIONS
 #define PWM_IN      ICP1_PIN
@@ -77,7 +78,7 @@ THE SOFTWARE.
 int32_t pulsein = PWM_NEUTRAL;
 float   velocity  = 0;
 int     limit     = 0;    // 0: no limit, 1: forward limit, -1: reverse limit
-LPFilter* outputfilter;
+LPFilter2* outputfilter;
 LPFilter* currentfilter;
 
 
@@ -94,7 +95,7 @@ void setup() {
   initializePWMReader();
 
   // Initialize output low-pass filter
-  outputfilter = new LPFilter(FILTER_DT, FILTER_TAU);
+  outputfilter = new LPFilter2(FILTER_DT, FILTER_TAU);
 
   // Initialize current input low-pass filter
   currentfilter = new LPFilter(FILTER_DT, 0.50f);
@@ -129,16 +130,16 @@ void loop() {
 
   // Current sensor resolution: ~65 mA
 //   digitalWrite(LED, currentfilter->step(readCurrent()) > 0.130f);
-  if (currentfilter->step(readCurrent()) > currentLimit(speed)) {
-    if ( velocity > 0.0f ) {
-      limit = 1;
-    } else if ( velocity < 0.0f ) {
-      limit = -1;
-    }
-  } else if ( velocity * limit < 0.0f ) {
-    // We're going the opposite direction from the limit, so clear limit
-    limit = 0;
-  }
+//   if (currentfilter->step(readCurrent()) > currentLimit(speed)) {
+//     if ( velocity > 0.0f ) {
+//       limit = 1;
+//     } else if ( velocity < 0.0f ) {
+//       limit = -1;
+//     }
+//   } else if ( velocity * limit < 0.0f ) {
+//     // We're going the opposite direction from the limit, so clear limit
+//     limit = 0;
+//   }
 
   if ( limit != 0 ) {
     velocity = 0.0f;
