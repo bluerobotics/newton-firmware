@@ -37,15 +37,12 @@ THE SOFTWARE.
 #include "LPFilter2.h"
 
 // HARDWARE PIN DEFINITIONS
-#define PWM_IN      ICP1_PIN
+#define PWM_IN      7
 #define LED         4
 #define CURRENT_IN  1   // from A4955 AIOUT
 #define SLEEPN      3
-#define OUT1        6
-#define OUT2        5
-
-// HARDWARE TIMER PINS
-#define ICP1_PIN    7
+#define OUT1        6   // OCR1A
+#define OUT2        5   // OCR1B
 
 // CURRENT SENSOR
 #define R_SENSE     0.005f            // ohms
@@ -56,28 +53,35 @@ THE SOFTWARE.
 // PWM READ DEFINITIONS
 #define PWM_FREQ    50                // Hz
 #define PERIOD      1000000/PWM_FREQ  // us
-#define PRESCALE    1                 // must match TCCR1B settings
-#define CNT_PER_US  (F_CPU/PRESCALE/1000000L) // timer counts
-#define MAX_COUNT   0x0FFF            // also sets output PWM frequency (~2 kHz)
-// #define MAX_COUNT   0x03FFL           // max unsigned 10-bit integer
-
-// PWM OUTPUT CHARACTERISTICS
 #define PWM_MAX     1900              // us
 #define PWM_MIN     1100              // us
 #define PWM_NEUTRAL 1500              // us
 #define HALF_RANGE  400               // us
 #define INPUT_MAX   2500              // us
 #define INPUT_MIN   500               // us
-#define OUTPUT_DZ   0.10f             // speed 0.0~1.0 (deadzone)
+#define INPUT_DZ    50                // us
+#define PRESCALE    1                 // must match TCCR1B settings
+#define CNT_PER_US  (F_CPU/PRESCALE/1000000L) // timer counts
+#define MAX_COUNT   0x0FFF            // also sets output PWM frequency (~2 kHz)
+// #define MAX_COUNT   0x03FFL           // max unsigned 10-bit integer
+
+// PWM OUTPUT CHARACTERISTICS
+#define OUTPUT_DZ   0.45f             // speed 0.0~1.0 (deadzone)
 #define MAX_DUTY    0.90f             // Limits duty cycle to save (12 V) motor
 
 // FILTER PARAMETERS
 #define FILTER_DT   0.050f            // s
 #define FILTER_TAU  0.200f            // s
 
-int32_t pulsein = PWM_NEUTRAL;
-float   velocity  = 0;
-int     limit     = 0;    // 0: no limit, 1: forward limit, -1: reverse limit
+// Custom Enumerated Types
+enum dir_t {
+  NONE = 0,
+  FORWARD,
+  REVERSE
+};
+
+int16_t pulsein = PWM_NEUTRAL;
+dir_t   limit   = NONE;
 LPFilter2* outputfilter;
 LPFilter* currentfilter;
 
@@ -94,6 +98,9 @@ void setup() {
   // Initialize PWM input reader
   initializePWMReader();
 
+  // Initialize PWM output generator
+  initializePWMOutput();
+
   // Initialize output low-pass filter
   outputfilter = new LPFilter2(FILTER_DT, FILTER_TAU);
 
@@ -108,52 +115,78 @@ void setup() {
 }
 
 void loop() {
-  cli();
+//   cli();
+
+  float rawvelocity, velocity;
+  dir_t direction;
 
   // Reject signals that are way off (i.e. const. 0 V, const. +5 V, noise)
   if ( pulsein >= INPUT_MIN && pulsein <= INPUT_MAX ) {
-    // Clamp PWM inputs to [PWM_MIN, PWM_MAX] range
-    pulsein  = constrain(pulsein, PWM_MIN, PWM_MAX);
+    // Remove neutral PWM bias & clamp to [-HALF_RANGE, HALF_RANGE] pulse width
+    int16_t pw = constrain(pulsein - PWM_NEUTRAL, -HALF_RANGE, HALF_RANGE);
 
-    // Map valid PWM signals to [-1 to 1]
-    velocity = (float)(pulsein - PWM_NEUTRAL)/HALF_RANGE;
+    // Reject anything inside input deadzone
+    if ( pw > INPUT_DZ ) {
+      // Map valid PWM signals to (0.0 to 1.0]
+      rawvelocity = ((float)(pw - INPUT_DZ)/(HALF_RANGE - INPUT_DZ)
+                    *(MAX_DUTY - OUTPUT_DZ) + OUTPUT_DZ)*MAX_COUNT;
+    } else if ( pw < -INPUT_DZ ) {
+      // Map valid PWM signals to [-1.0 to 0.0)
+      rawvelocity = ((float)(pw + INPUT_DZ)/(HALF_RANGE - INPUT_DZ)
+                    *(MAX_DUTY - OUTPUT_DZ) - OUTPUT_DZ)*MAX_COUNT;
+    } else {
+      // Stop motor if input is within input deadzone
+      rawvelocity = 0.0f;
+    }
   } else {
     // Stop motor if input is invalid
-    velocity = 0;
+    rawvelocity = 0.0f;
   }
-  // Filter velocity
-  velocity = outputfilter->step(velocity);
 
-  // Set timer (do not allow speeds above MAX_DUTY)
-  float speed = abs(velocity);
-  OCR1B = constrain(speed * MAX_DUTY * MAX_COUNT, 0, MAX_DUTY * MAX_COUNT);
+  // Filter velocity
+  velocity = outputfilter->step(rawvelocity);
+
+  // Determine direction
+  if ( velocity > OUTPUT_DZ*MAX_COUNT) {
+    direction = FORWARD;
+  } else if ( velocity < -OUTPUT_DZ*MAX_COUNT) {
+    direction = REVERSE;
+  } else {
+    direction = NONE;
+  }
 
   // Current sensor resolution: ~65 mA
 //   digitalWrite(LED, currentfilter->step(readCurrent()) > 0.130f);
-//   if (currentfilter->step(readCurrent()) > currentLimit(speed)) {
-//     if ( velocity > 0.0f ) {
-//       limit = 1;
-//     } else if ( velocity < 0.0f ) {
-//       limit = -1;
-//     }
-//   } else if ( velocity * limit < 0.0f ) {
-//     // We're going the opposite direction from the limit, so clear limit
-//     limit = 0;
-//   }
-
-  if ( limit != 0 ) {
-    velocity = 0.0f;
+  if (currentfilter->step(readCurrent()) > currentLimit(abs(velocity))) {
+    limit = direction;
+  } else if ( direction != NONE && limit != NONE && direction != limit ) {
+    // We're going the opposite direction from the limit, so clear limit
+    limit = NONE;
   }
 
-  sei();
+  // Set output PWM timers
+  if ( direction == FORWARD && limit != FORWARD) {
+    OCR1A = abs(velocity);
+    OCR1B = 0;
+  } else if ( direction == REVERSE && limit != REVERSE) {
+    OCR1A = 0;
+    OCR1B = abs(velocity);
+  } else {
+    OCR1A = 0;
+    OCR1B = 0;
+  }
+
+digitalWrite(LED, pulsein <= PWM_NEUTRAL);
+
+//   sei();
   delay(FILTER_DT*1000);
 }
 
 float currentLimit(float speed) {
-  return 0.500f;
+  return 1.000f;
 }
 
-void initializePWMReader() {
+void initializePWMOutput() {
   // Stop interrupts while changing timer settings
   cli();
 
@@ -161,38 +194,35 @@ void initializePWMReader() {
   TCCR1B = 0;
   TCCR1C = 0;
 
-  // Set Clear Timer on Compare (CTC) (OCR1A)
+  // Set non-inverting PWM Mode
+  bitSet(TCCR1A, COM1A1);
+  bitSet(TCCR1A, COM1B1);
+
+  // Set PWM. Phase & Freq. Correct (ICR1)
   bitClear(TCCR1A, WGM10);  // WGM10: 0
   bitClear(TCCR1A, WGM11);  // WGM11: 0
-  bitSet(TCCR1B, WGM12);    // WGM12: 1
-  bitClear(TCCR1B, WGM13);  // WGM13: 0
+  bitClear(TCCR1B, WGM12);  // WGM12: 0
+  bitSet  (TCCR1B, WGM13);  // WGM13: 1
 
   // Set timer1 clock source to prescaler 1
-  bitSet(TCCR1B, CS10);     // CS10: 1
+  bitSet  (TCCR1B, CS10);   // CS10: 1
   bitClear(TCCR1B, CS11);   // CS11: 0
   bitClear(TCCR1B, CS12);   // CS12: 0
 
-  // Enable timer1 Input Capture Interrupt
-  bitSet(TIMSK1, ICIE1);
-
-  // Enable timer1 Output Compare B Match Interrupt
-  bitSet(TIMSK1, OCIE1B);
-
-  // Enable timer1 Output Compare A Match Interrupt
-  bitSet(TIMSK1, OCIE1A);
-
-  // Enable timer1 Input Capture Noise Canceler
-  bitSet(TCCR1B, ICNC1);
-
-  // Set timer1 Input Capture Edge Select
-    // 0: falling edge, 1: rising edge
-  bitSet(TCCR1B, ICES1);  // detect rising edge
-
-  // Set timer1 TOP (stored in OCR1A for this CTC mode)
-  OCR1A = MAX_COUNT;
+  // Set timer1 TOP (stored in ICR1)
+  ICR1 = MAX_COUNT;
 
   // Done setting timers -> allow interrupts again
   sei();
+}
+
+// Set up pin change interrupt for PWM reader
+void initializePWMReader() {
+  // Enable PCI1 (pins 0~7)
+  bitSet(GIMSK, PCIE0);
+
+  // Enable PCI for PWM input pin
+  bitSet(PCMSK0, PWM_IN);
 }
 
 // Read current (in amperes)
@@ -201,61 +231,26 @@ float readCurrent() {
   return (analogRead(CURRENT_IN)*3.3f/1023.0f/10.0f)/R_SENSE;
 }
 
+
 ////////////////////////////////
 // Interrupt Service Routines //
 ////////////////////////////////
 
-// Define global variables only used in ISRs
+// Define global variables only used for input timer
 namespace {
-  uint16_t pwmstart = 0;
-  uint8_t  ncycles  = 0;
+  uint32_t inputpulsestart = 0xFFFF;
 }
 
-// Triggered when a change is detected on ICP1
-SIGNAL(TIM1_CAPT_vect) {          // (microcontroller-specific interrupt name)
-  if ( digitalRead(ICP1_PIN) ) {
-    // If we caught the rising edge
-    // Save start time and clear ncycles
-    pwmstart = ICR1;
-    ncycles  = 0;
-
-    // Reset for falling edge
-    bitClear(TCCR1B, ICES1);  // detect falling edge
+// Read PWM input
+SIGNAL(PCINT0_vect) {
+  if (digitalRead(PWM_IN)) {
+    // Record start of input pulse
+    inputpulsestart = micros();
   } else {
-    // If we caught the falling edge
-    // Save input pulse width (take into account timer overflows)
-    pulsein = (int32_t)( ICR1 + ncycles*(MAX_COUNT+1) - pwmstart )/CNT_PER_US;
-
-    // Reset for rising edge
-    bitSet(TCCR1B, ICES1);  // detect rising edge
+    // Measure width of input pulse
+    // Only use data for which the start time comes first (ignore rollovers)
+    if ( inputpulsestart < micros() ) {
+      pulsein = micros() - inputpulsestart;
+    }
   }
-}
-
-// Triggered when TCNT1 == OCR1A (TOP)
-SIGNAL(TIM1_COMPA_vect) {         // (microcontroller-specific interrupt name)
-  // Figure out which direction to turn
-  if (velocity > OUTPUT_DZ) {
-    // Start pulse on output pin 1 (forward)
-      // Setting bits is faster than digitalWrite()
-      // (port/pin combination is microcontroller-specific)
-    bitSet(PORTA, OUT1); // turn on output pin 1
-  }
-  if ( velocity < -OUTPUT_DZ) {
-    // Start pulse on output pin 2 (reverse)
-      // Setting bits is faster than digitalWrite()
-      // (port/pin combination is microcontroller-specific)
-    bitSet(PORTA, OUT2); // turn on output pin 2
-  }
-
-  // Increment timer overflow count for input PWM detector
-  ncycles++;
-}
-
-// Triggered when TCNT1 == OCR1B
-SIGNAL(TIM1_COMPB_vect) {         // (microcontroller-specific interrupt name)
-  // End pulse - clear both output pins
-    // Setting bits is faster than digitalWrite()
-    // (port/pin combination is microcontroller-specific)
-  bitClear(PORTA, OUT1);
-  bitClear(PORTA, OUT2);
 }
