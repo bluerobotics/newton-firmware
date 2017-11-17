@@ -59,7 +59,7 @@ THE SOFTWARE.
 #define HALF_RANGE  400               // us
 #define INPUT_MAX   2500              // us
 #define INPUT_MIN   500               // us
-#define INPUT_DZ    50                // us
+#define INPUT_DZ    25                // us
 #define PRESCALE    1                 // must match TCCR1B settings
 #define CNT_PER_US  (F_CPU/PRESCALE/1000000L) // timer counts
 #define MAX_COUNT   0x0FFF            // also sets output PWM frequency (~2 kHz)
