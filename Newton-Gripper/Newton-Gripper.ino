@@ -176,8 +176,8 @@ void loop() {
     OCR1A = 0;
     OCR1B = abs(velocity);
   } else {
-    OCR1A = 0;
-    OCR1B = 0;
+    OCR1A = MAX_COUNT;
+    OCR1B = MAX_COUNT;
   }
 
 // digitalWrite(LED, pulsein <= PWM_NEUTRAL);
