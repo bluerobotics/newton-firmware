@@ -78,8 +78,10 @@ enum dir_t {
   REVERSE
 };
 
-int16_t pulsein = PWM_NEUTRAL;
-dir_t   limit   = NONE;
+uint32_t updatefilterruntime  = 0;
+
+int16_t  pulsein = PWM_NEUTRAL;
+dir_t    limit   = NONE;
 DiscreteFilter outputfilter;
 DiscreteFilter currentfilter;
 
@@ -113,77 +115,71 @@ void setup() {
 }
 
 void loop() {
-//   cli();
+  // Run filters at specified interval
+  if ( millis() > updatefilterruntime ) {
+    // Set next filter runtime
+    updatefilterruntime = millis() + FILTER_DT*1000;
 
-  float rawvelocity, velocity;
-  dir_t direction;
+    // Declare local variables
+    float rawvelocity, velocity;
+    dir_t direction;
 
-  // Reject signals that are way off (i.e. const. 0 V, const. +5 V, noise)
-  if ( pulsein >= INPUT_MIN && pulsein <= INPUT_MAX ) {
-    // Remove neutral PWM bias & clamp to [-HALF_RANGE, HALF_RANGE] pulse width
-    int16_t pw = constrain(pulsein - PWM_NEUTRAL, -HALF_RANGE, HALF_RANGE);
+    // Reject signals that are way off (i.e. const. 0 V, const. +5 V, noise)
+    if ( pulsein >= INPUT_MIN && pulsein <= INPUT_MAX ) {
+      // Remove neutral PWM bias & clamp to [-HALF_RANGE, HALF_RANGE]
+      int16_t pw = constrain(pulsein - PWM_NEUTRAL, -HALF_RANGE, HALF_RANGE);
 
-    // Reject anything inside input deadzone
-    if ( pw > INPUT_DZ ) {
-      // Map valid PWM signals to (0.0 to 1.0]
-      rawvelocity = ((float)(pw - INPUT_DZ)/(HALF_RANGE - INPUT_DZ)
-                    *(MAX_DUTY - OUTPUT_DZ) + OUTPUT_DZ)*MAX_COUNT;
-    } else if ( pw < -INPUT_DZ ) {
-      // Map valid PWM signals to [-1.0 to 0.0)
-      rawvelocity = ((float)(pw + INPUT_DZ)/(HALF_RANGE - INPUT_DZ)
-                    *(MAX_DUTY - OUTPUT_DZ) - OUTPUT_DZ)*MAX_COUNT;
+      // Reject anything inside input deadzone
+      if ( pw > INPUT_DZ ) {
+        // Map valid PWM signals to (0.0 to 1.0]
+        rawvelocity = ((float)(pw - INPUT_DZ)/(HALF_RANGE - INPUT_DZ)
+                      *(MAX_DUTY - OUTPUT_DZ) + OUTPUT_DZ)*MAX_COUNT;
+      } else if ( pw < -INPUT_DZ ) {
+        // Map valid PWM signals to [-1.0 to 0.0)
+        rawvelocity = ((float)(pw + INPUT_DZ)/(HALF_RANGE - INPUT_DZ)
+                      *(MAX_DUTY - OUTPUT_DZ) - OUTPUT_DZ)*MAX_COUNT;
+      } else {
+        // Stop motor if input is within input deadzone
+        rawvelocity = 0.0f;
+      }
     } else {
-      // Stop motor if input is within input deadzone
+      // Stop motor if input is invalid
       rawvelocity = 0.0f;
     }
-  } else {
-    // Stop motor if input is invalid
-    rawvelocity = 0.0f;
-  }
 
-  // Set filter gain based on input voltage
-//   outputfilter.setGain();
+    // Set filter gain based on input voltage
+//     outputfilter.setGain();
 
-  // Filter velocity
-  velocity = constrain(outputfilter.step(rawvelocity), -MAX_COUNT,
-                       MAX_COUNT);
-//   velocity = constrain(rawvelocity, -MAX_DUTY*MAX_COUNT, MAX_DUTY*MAX_COUNT);
+    // Filter velocity
+    velocity = constrain(outputfilter.step(rawvelocity), -MAX_COUNT,
+                         MAX_COUNT);
+//     velocity = constrain(rawvelocity, -MAX_DUTY*MAX_COUNT, MAX_DUTY*MAX_COUNT);
 
-  // Determine direction
-  if ( velocity > OUTPUT_DZ*MAX_COUNT) {
-    direction = FORWARD;
-  } else if ( velocity < -OUTPUT_DZ*MAX_COUNT) {
-    direction = REVERSE;
-  } else {
-    direction = NONE;
-  }
 
-  // Current sensor resolution: ~65 mA
-//   digitalWrite(LED, currentfilter->step(readCurrent()) > 0.130f);
-//   if (currentfilter.step(readCurrent()) > currentLimit(abs(velocity))) {
-  if (currentfilter.step(readCurrent()/currentSteadyState(abs(velocity))) > 2.0f) {
-    limit = direction;
-  } else if ( /*direction != NONE &&*/ limit != NONE && direction != limit ) {
-    // We're going the opposite direction from the limit, so clear limit
-    limit = NONE;
-  }
+    // Current sensor resolution: ~65 mA
+//     digitalWrite(LED, currentfilter->step(readCurrent()) > 0.130f);
+//     if (currentfilter.step(readCurrent()) > currentLimit(abs(velocity))) {
+    if (currentfilter.step(readCurrent()/currentSteadyState(abs(velocity))) > 2.0f) {
+      limit = direction;
+    } else if ( /*direction != NONE &&*/ limit != NONE && direction != limit ) {
+      // We're going the opposite direction from the limit, so clear limit
+      limit = NONE;
+    }
 
-  // Set output PWM timers
-  if ( direction == FORWARD && limit != FORWARD) {
-    OCR1A = abs(velocity);
-    OCR1B = 0;
-  } else if ( direction == REVERSE && limit != REVERSE) {
-    OCR1A = 0;
-    OCR1B = abs(velocity);
-  } else {
-    OCR1A = MAX_COUNT;
-    OCR1B = MAX_COUNT;
-  }
+    // Set output PWM timers
+    if ( direction == FORWARD && limit != FORWARD) {
+      OCR1A = abs(velocity);
+      OCR1B = 0;
+    } else if ( direction == REVERSE && limit != REVERSE) {
+      OCR1A = 0;
+      OCR1B = abs(velocity);
+    } else {
+      OCR1A = MAX_COUNT;
+      OCR1B = MAX_COUNT;
+    }
 
-// digitalWrite(LED, pulsein <= PWM_NEUTRAL);
-
-//   sei();
-  delay(FILTER_DT*1000);
+//   digitalWrite(LED, pulsein <= PWM_NEUTRAL);
+  } // end run filters
 }
 
 float currentLimit(float speed) {
