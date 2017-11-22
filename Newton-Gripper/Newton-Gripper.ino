@@ -33,8 +33,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 -------------------------------*/
 
-#include "LPFilter.h"
-#include "LPFilter2.h"
+#include <DiscreteFilter.h>
 
 // HARDWARE PIN DEFINITIONS
 #define PWM_IN      7
@@ -46,9 +45,6 @@ THE SOFTWARE.
 
 // CURRENT SENSOR
 #define R_SENSE     0.005f            // ohms
-
-// PWM INPUT TIMEOUT
-#define INPUT_TOUT  0.500f            // s
 
 // PWM READ DEFINITIONS
 #define PWM_FREQ    50                // Hz
@@ -62,16 +58,18 @@ THE SOFTWARE.
 #define INPUT_DZ    25                // us
 #define PRESCALE    1                 // must match TCCR1B settings
 #define CNT_PER_US  (F_CPU/PRESCALE/1000000L) // timer counts
-#define MAX_COUNT   0x0FFF            // also sets output PWM frequency (~2 kHz)
+#define MAX_COUNT   0x0FFF          // sets output PWM frequency (~1 kHz)
 // #define MAX_COUNT   0x03FFL           // max unsigned 10-bit integer
 
 // PWM OUTPUT CHARACTERISTICS
-#define OUTPUT_DZ   0.45f             // speed 0.0~1.0 (deadzone)
+#define OUTPUT_DZ   0.35f             // speed 0.0~1.0 (deadzone)
 #define MAX_DUTY    0.90f             // Limits duty cycle to save (12 V) motor
 
 // FILTER PARAMETERS
 #define FILTER_DT   0.050f            // s
-#define FILTER_TAU  0.200f            // s
+#define TAUP_OUT    0.500f            // sets lp filtering of lead-lag (s)
+#define TAUN_OUT    TAUP_OUT/1.7f     // sets starting gain of lead-lag (s)
+#define TAU_CURRENT 1.000f            // s
 
 // Custom Enumerated Types
 enum dir_t {
@@ -82,8 +80,8 @@ enum dir_t {
 
 int16_t pulsein = PWM_NEUTRAL;
 dir_t   limit   = NONE;
-LPFilter2* outputfilter;
-LPFilter* currentfilter;
+DiscreteFilter outputfilter;
+DiscreteFilter currentfilter;
 
 
 void setup() {
@@ -102,10 +100,10 @@ void setup() {
   initializePWMOutput();
 
   // Initialize output low-pass filter
-  outputfilter = new LPFilter2(FILTER_DT, FILTER_TAU);
+  outputfilter.createLeadLagCompensator(FILTER_DT, TAUP_OUT, TAUN_OUT);
 
   // Initialize current input low-pass filter
-  currentfilter = new LPFilter(FILTER_DT, 0.50f);
+  currentfilter.createFirstOrderLowPassFilter(FILTER_DT, TAU_CURRENT);
 
   // Wake up A4955
   digitalWrite(SLEEPN, HIGH);
@@ -143,8 +141,13 @@ void loop() {
     rawvelocity = 0.0f;
   }
 
+  // Set filter gain based on input voltage
+//   outputfilter.setGain();
+
   // Filter velocity
-  velocity = outputfilter->step(rawvelocity);
+  velocity = constrain(outputfilter.step(rawvelocity), -MAX_COUNT,
+                       MAX_COUNT);
+//   velocity = constrain(rawvelocity, -MAX_DUTY*MAX_COUNT, MAX_DUTY*MAX_COUNT);
 
   // Determine direction
   if ( velocity > OUTPUT_DZ*MAX_COUNT) {
@@ -157,9 +160,10 @@ void loop() {
 
   // Current sensor resolution: ~65 mA
 //   digitalWrite(LED, currentfilter->step(readCurrent()) > 0.130f);
-  if (currentfilter->step(readCurrent()) > currentLimit(abs(velocity))) {
+//   if (currentfilter.step(readCurrent()) > currentLimit(abs(velocity))) {
+  if (currentfilter.step(readCurrent()/currentSteadyState(abs(velocity))) > 2.0f) {
     limit = direction;
-  } else if ( direction != NONE && limit != NONE && direction != limit ) {
+  } else if ( /*direction != NONE &&*/ limit != NONE && direction != limit ) {
     // We're going the opposite direction from the limit, so clear limit
     limit = NONE;
   }
@@ -176,14 +180,18 @@ void loop() {
     OCR1B = 0;
   }
 
-digitalWrite(LED, pulsein <= PWM_NEUTRAL);
+// digitalWrite(LED, pulsein <= PWM_NEUTRAL);
 
 //   sei();
   delay(FILTER_DT*1000);
 }
 
 float currentLimit(float speed) {
-  return 1.000f;
+  return map(speed, OUTPUT_DZ*MAX_COUNT, MAX_DUTY*MAX_COUNT, 400, 600)/1000.0f;
+}
+
+float currentSteadyState(float speed) {
+  return map(speed, OUTPUT_DZ*MAX_COUNT, MAX_DUTY*MAX_COUNT, 120, 190)/1000.0f;
 }
 
 void initializePWMOutput() {
