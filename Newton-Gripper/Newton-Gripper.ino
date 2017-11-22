@@ -46,6 +46,9 @@ THE SOFTWARE.
 // CURRENT SENSOR
 #define R_SENSE     0.005f            // ohms
 
+// PWM INPUT TIMEOUT
+#define INPUT_TOUT  0.050f            // s
+
 // PWM READ DEFINITIONS
 #define PWM_FREQ    50                // Hz
 #define PERIOD      1000000/PWM_FREQ  // us
@@ -78,6 +81,7 @@ enum dir_t {
   REVERSE
 };
 
+uint32_t lastpulsetime        = 0;
 uint32_t updatefilterruntime  = 0;
 
 int16_t  pulsein = PWM_NEUTRAL;
@@ -115,6 +119,15 @@ void setup() {
 }
 
 void loop() {
+  // Make sure we're still receiving PWM inputs
+  if ( (millis() - lastpulsetime)/1000.0f > INPUT_TOUT ) {
+    // If it has been too long since the last input, shut off motor
+    pulsein = PWM_NEUTRAL;
+
+    // Force filters to update immediately
+    updatefilterruntime = 0;
+  } // end pwm input check
+
   // Run filters at specified interval
   if ( millis() > updatefilterruntime ) {
     // Set next filter runtime
@@ -256,5 +269,6 @@ SIGNAL(PCINT0_vect) {
     if ( inputpulsestart < micros() ) {
       pulsein = micros() - inputpulsestart;
     }
+    lastpulsetime = millis();
   }
 }
