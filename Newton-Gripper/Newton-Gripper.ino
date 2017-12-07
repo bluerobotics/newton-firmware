@@ -166,7 +166,15 @@ void loop() {
     // Filter velocity
     velocity = constrain(outputfilter.step(rawvelocity), -MAX_COUNT,
                          MAX_COUNT);
-//     velocity = constrain(rawvelocity, -MAX_DUTY*MAX_COUNT, MAX_DUTY*MAX_COUNT);
+    // velocity = constrain(rawvelocity, -MAX_DUTY*MAX_COUNT, MAX_DUTY*MAX_COUNT);
+
+    if (velocity > INPUT_DZ*CNT_PER_US) {
+        direction = FORWARD;
+    } else if (velocity < -INPUT_DZ*CNT_PER_US) {
+        direction = REVERSE;
+    } else {
+        direction = NONE;
+    }
 
 
     // Current sensor resolution: ~65 mA
@@ -200,7 +208,7 @@ float currentLimit(float speed) {
 }
 
 float currentSteadyState(float speed) {
-  return map(speed, OUTPUT_DZ*MAX_COUNT, MAX_DUTY*MAX_COUNT, 120, 190)/1000.0f;
+  return map(speed, OUTPUT_DZ*MAX_COUNT, MAX_DUTY*MAX_COUNT, 160, 230)/1000.0f;
 }
 
 void initializePWMOutput() {
