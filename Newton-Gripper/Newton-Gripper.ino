@@ -65,14 +65,15 @@ THE SOFTWARE.
 // #define MAX_COUNT   0x03FFL           // max unsigned 10-bit integer
 
 // PWM OUTPUT CHARACTERISTICS
-#define OUTPUT_DZ   0.35f             // speed 0.0~1.0 (deadzone)
+#define OUTPUT_DZ   0.40f             // speed 0.0~1.0 (deadzone)
 #define MAX_DUTY    0.90f             // Limits duty cycle to save (12 V) motor
 
 // FILTER PARAMETERS
 #define FILTER_DT   0.050f            // s
 #define TAUP_OUT    0.500f            // sets lp filtering of lead-lag (s)
-#define TAUN_OUT    TAUP_OUT/1.7f     // sets starting gain of lead-lag (s)
-#define TAU_CURRENT 1.000f            // s
+#define TAUN_OUT    TAUP_OUT/1.5f     // sets starting gain of lead-lag (s)
+#define TAU_CURRENT 0.10000f          // s
+#define CURRENT_DT  0.00005f          // s
 
 // Custom Enumerated Types
 enum dir_t {
@@ -83,9 +84,11 @@ enum dir_t {
 
 uint32_t lastpulsetime        = 0;
 uint32_t updatefilterruntime  = 0;
+uint32_t updatecurrentruntime = 0;
 
 int16_t  pulsein = PWM_NEUTRAL;
 dir_t    limit   = NONE;
+dir_t    lastdir = NONE;
 DiscreteFilter outputfilter;
 DiscreteFilter currentfilter;
 
@@ -109,7 +112,8 @@ void setup() {
   outputfilter.createLeadLagCompensator(FILTER_DT, TAUP_OUT, TAUN_OUT);
 
   // Initialize current input low-pass filter
-  currentfilter.createFirstOrderLowPassFilter(FILTER_DT, TAU_CURRENT);
+  currentfilter.createFirstOrderLowPassFilter(CURRENT_DT, TAU_CURRENT);
+  currentfilter.setSaturation(0.50f);
 
   // Wake up A4955
   digitalWrite(SLEEPN, HIGH);
@@ -154,10 +158,12 @@ void loop() {
       } else {
         // Stop motor if input is within input deadzone
         rawvelocity = 0.0f;
+        outputfilter.clear();
       }
     } else {
       // Stop motor if input is invalid
       rawvelocity = 0.0f;
+      outputfilter.clear();
     }
 
     // Set filter gain based on input voltage
@@ -176,15 +182,23 @@ void loop() {
         direction = NONE;
     }
 
+    // Clear current filter if we change directions
+    if (direction != lastdir) {
+      currentfilter.clear();
+    }
+
 
     // Current sensor resolution: ~65 mA
 //     digitalWrite(LED, currentfilter->step(readCurrent()) > 0.130f);
 //     if (currentfilter.step(readCurrent()) > currentLimit(abs(velocity))) {
-    if (currentfilter.step(readCurrent()/currentSteadyState(abs(velocity))) > 2.0f) {
+    if (currentfilter.getLastOutput() > stallCurrent(abs(velocity))) {
       limit = direction;
+      digitalWrite(LED, LOW);
+      // currentfilter.clear();
     } else if ( /*direction != NONE &&*/ limit != NONE && direction != limit ) {
       // We're going the opposite direction from the limit, so clear limit
       limit = NONE;
+      digitalWrite(LED, HIGH);
     }
 
     // Set output PWM timers
@@ -199,16 +213,20 @@ void loop() {
       OCR1B = MAX_COUNT;
     }
 
-//   digitalWrite(LED, pulsein <= PWM_NEUTRAL);
+    // Save last direction
+    lastdir = direction;
   } // end run filters
+
+  // Current lp filter
+  if ( micros() > updatecurrentruntime ) {
+    // Set next current lp filter runtime
+    updatecurrentruntime = micros() + CURRENT_DT*1000000;
+    currentfilter.step(readCurrent());
+  } // end current lp filter
 }
 
-float currentLimit(float speed) {
-  return map(speed, OUTPUT_DZ*MAX_COUNT, MAX_DUTY*MAX_COUNT, 400, 600)/1000.0f;
-}
-
-float currentSteadyState(float speed) {
-  return map(speed, OUTPUT_DZ*MAX_COUNT, MAX_DUTY*MAX_COUNT, 160, 230)/1000.0f;
+float stallCurrent(float speed) {
+  return map(speed, OUTPUT_DZ*MAX_COUNT, MAX_DUTY*MAX_COUNT, 200, 300)/1000.0f;
 }
 
 void initializePWMOutput() {
@@ -253,7 +271,7 @@ void initializePWMReader() {
 // Read current (in amperes)
 float readCurrent() {
   // Reported voltage is 10x actual drop across the sense resistor
-  return (analogRead(CURRENT_IN)*3.3f/1023.0f/10.0f)/R_SENSE;
+  return (analogRead(CURRENT_IN)*3.3f)/(1023.0f*10.0f*R_SENSE);
 }
 
 
