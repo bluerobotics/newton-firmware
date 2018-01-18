@@ -65,15 +65,22 @@ THE SOFTWARE.
 // #define MAX_COUNT   0x03FFL           // max unsigned 10-bit integer
 
 // PWM OUTPUT CHARACTERISTICS
-#define OUTPUT_DZ   0.40f             // speed 0.0~1.0 (deadzone)
+#define OUTPUT_DZ   0.60f             // speed 0.0~1.0 (deadzone)
 #define MAX_DUTY    0.90f             // Limits duty cycle to save (12 V) motor
 
 // FILTER PARAMETERS
 #define FILTER_DT   0.050f            // s
 #define TAUP_OUT    0.500f            // sets lp filtering of lead-lag (s)
 #define TAUN_OUT    TAUP_OUT/1.5f     // sets starting gain of lead-lag (s)
-#define TAU_CURRENT 0.10000f          // s
-#define CURRENT_DT  0.00005f          // s
+#define TAU_CURRENT 0.03000f          // s
+#define CURRENT_DT  0.00010f          // s
+
+// STALL PARAMETERS
+#define I_STALL_A0  6.47f             // stall current curve const. term
+#define I_STALL_A1  -21.3f            // stall current curve linear term
+#define I_STALL_A2  19.4f             // stall current curve quadratic term
+#define I_LIMIT_IN  0.50f             // fraction of stall current (closing)
+#define I_LIMIT_OUT 0.70f             // fraction of stall current (opening)
 
 // Custom Enumerated Types
 enum dir_t {
@@ -86,9 +93,10 @@ uint32_t lastpulsetime        = 0;
 uint32_t updatefilterruntime  = 0;
 uint32_t updatecurrentruntime = 0;
 
-int16_t  pulsein = PWM_NEUTRAL;
-dir_t    limit   = NONE;
-dir_t    lastdir = NONE;
+int16_t  pulsein  = PWM_NEUTRAL;
+dir_t    limit    = NONE;
+dir_t    lastdir  = NONE;
+float    velocity = 0.0f;
 DiscreteFilter outputfilter;
 DiscreteFilter currentfilter;
 
@@ -113,7 +121,7 @@ void setup() {
 
   // Initialize current input low-pass filter
   currentfilter.createFirstOrderLowPassFilter(CURRENT_DT, TAU_CURRENT);
-  currentfilter.setSaturation(0.50f);
+  currentfilter.setSaturation(1.0f);
 
   // Wake up A4955
   digitalWrite(SLEEPN, HIGH);
@@ -138,7 +146,7 @@ void loop() {
     updatefilterruntime = millis() + FILTER_DT*1000;
 
     // Declare local variables
-    float rawvelocity, velocity;
+    float rawvelocity;
     dir_t direction;
 
     // Reject signals that are way off (i.e. const. 0 V, const. +5 V, noise)
@@ -172,7 +180,7 @@ void loop() {
     // Filter velocity
     velocity = constrain(outputfilter.step(rawvelocity), -MAX_COUNT,
                          MAX_COUNT);
-    // velocity = constrain(rawvelocity, -MAX_DUTY*MAX_COUNT, MAX_DUTY*MAX_COUNT);
+//     velocity = constrain(rawvelocity, -MAX_DUTY*MAX_COUNT, MAX_DUTY*MAX_COUNT);
 
     if (velocity > INPUT_DZ*CNT_PER_US) {
         direction = FORWARD;
@@ -191,7 +199,11 @@ void loop() {
     // Current sensor resolution: ~65 mA
 //     digitalWrite(LED, currentfilter->step(readCurrent()) > 0.130f);
 //     if (currentfilter.step(readCurrent()) > currentLimit(abs(velocity))) {
-    if (currentfilter.getLastOutput() > stallCurrent(abs(velocity))) {
+    if (direction == REVERSE && currentfilter.getLastOutput() > I_LIMIT_OUT) {
+      limit = direction;
+      digitalWrite(LED, LOW);
+      // currentfilter.clear();
+    } else if (direction == FORWARD && currentfilter.getLastOutput() > I_LIMIT_IN) {
       limit = direction;
       digitalWrite(LED, LOW);
       // currentfilter.clear();
@@ -221,12 +233,20 @@ void loop() {
   if ( micros() > updatecurrentruntime ) {
     // Set next current lp filter runtime
     updatecurrentruntime = micros() + CURRENT_DT*1000000;
-    currentfilter.step(readCurrent());
+    currentfilter.step(readCurrent()/stallCurrent(velocity));
   } // end current lp filter
 }
 
-float stallCurrent(float speed) {
-  return map(speed, OUTPUT_DZ*MAX_COUNT, MAX_DUTY*MAX_COUNT, 200, 300)/1000.0f;
+float stallCurrent(float speed_counts) {
+  float i_stall;
+  float speed = abs(speed_counts/MAX_COUNT);
+  if (speed > 0.9*OUTPUT_DZ && speed < 1.1) {
+    i_stall = I_STALL_A0 + I_STALL_A1*speed + I_STALL_A2*speed*speed;
+  } else {
+    i_stall = INFINITY;
+  }
+
+  return i_stall;
 }
 
 void initializePWMOutput() {
