@@ -62,7 +62,6 @@ THE SOFTWARE.
 #define PRESCALE    1                 // must match TCCR1B settings
 #define CNT_PER_US  (F_CPU/PRESCALE/1000000L) // timer counts
 #define MAX_COUNT   0x0FFF          // sets output PWM frequency (~1 kHz)
-// #define MAX_COUNT   0x03FFL           // max unsigned 10-bit integer
 
 // PWM OUTPUT CHARACTERISTICS
 #define OUTPUT_DZ   0.60f             // speed 0.0~1.0 (deadzone)
@@ -180,7 +179,6 @@ void loop() {
     // Filter velocity
     velocity = constrain(outputfilter.step(rawvelocity), -MAX_COUNT,
                          MAX_COUNT);
-//     velocity = constrain(rawvelocity, -MAX_DUTY*MAX_COUNT, MAX_DUTY*MAX_COUNT);
 
     if (velocity > INPUT_DZ*CNT_PER_US) {
         direction = FORWARD;
@@ -197,8 +195,6 @@ void loop() {
 
 
     // Current sensor resolution: ~65 mA
-//     digitalWrite(LED, currentfilter->step(readCurrent()) > 0.130f);
-//     if (currentfilter.step(readCurrent()) > currentLimit(abs(velocity))) {
     if (direction == REVERSE && currentfilter.getLastOutput() > I_LIMIT_OUT) {
       limit = direction;
       digitalWrite(LED, LOW);
