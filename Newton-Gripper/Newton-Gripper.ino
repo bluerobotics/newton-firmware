@@ -36,12 +36,13 @@ THE SOFTWARE.
 #include <DiscreteFilter.h>
 
 // HARDWARE PIN DEFINITIONS
-#define PWM_IN      7
+#define PWM_IN      8   // INT0
 #define LED         4
 #define CURRENT_IN  1   // from A4955 AIOUT
 #define SLEEPN      3
 #define OUT1        6   // OCR1A
 #define OUT2        5   // OCR1B
+#define VOLTAGE_IN  0   // from voltage divider
 
 // CURRENT SENSOR
 #define R_SENSE     0.005f            // ohms
