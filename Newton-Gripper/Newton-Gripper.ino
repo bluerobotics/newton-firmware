@@ -59,7 +59,7 @@ THE SOFTWARE.
 #define HALF_RANGE  400               // us
 #define INPUT_MAX   2500              // us
 #define INPUT_MIN   500               // us
-#define INPUT_DZ    25                // us
+#define INPUT_DZ    30                // us
 #define PRESCALE    1                 // must match TCCR1B settings
 #define CNT_PER_US  (F_CPU/PRESCALE/1000000L) // timer counts
 #define MAX_COUNT   0x0FFF          // sets output PWM frequency (~1 kHz)
@@ -276,13 +276,14 @@ void initializePWMOutput() {
   sei();
 }
 
-// Set up pin change interrupt for PWM reader
+// Set up external interrupt for PWM reader
 void initializePWMReader() {
-  // Enable PCI1 (pins 0~7)
-  bitSet(GIMSK, PCIE0);
+  // Enable INT0
+  bitSet(GIMSK, INT0);
 
-  // Enable PCI for PWM input pin
-  bitSet(PCMSK0, PWM_IN);
+  // Set interrupt sense control to "any logical change"
+  bitSet  (MCUCR, ISC00);   // ISC00: 1
+  bitClear(MCUCR, ISC01);   // ISC01: 0
 }
 
 // Read current (in amperes)
@@ -302,7 +303,7 @@ namespace {
 }
 
 // Read PWM input
-SIGNAL(PCINT0_vect) {
+SIGNAL(INT0_vect) {
   if (digitalRead(PWM_IN)) {
     // Record start of input pulse
     inputpulsestart = micros();
