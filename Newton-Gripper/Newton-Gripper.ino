@@ -47,6 +47,10 @@ THE SOFTWARE.
 // CURRENT SENSOR
 #define R_SENSE     0.005f            // ohms
 
+// VOLTAGE SENSOR
+#define V_IN        3.3f              // volts
+#define V_SENSE_DIV 0.155f            // v_sense voltage divider (3.3/(3.3+18))
+
 // PWM INPUT TIMEOUT
 #define INPUT_TOUT  0.050f            // s
 
@@ -82,6 +86,10 @@ THE SOFTWARE.
 #define I_LIMIT_IN  0.50f             // fraction of stall current (closing)
 #define I_LIMIT_OUT 0.70f             // fraction of stall current (opening)
 
+// CURRENT/VOLTAGE PARAMETERS
+#define V_BASE      12.0f             // voltage at which measurements were made
+#define I_RATIO_A1  0.0756f           // current ratio linear term
+
 // Custom Enumerated Types
 enum dir_t {
   NONE = 0,
@@ -109,6 +117,7 @@ void setup() {
   pinMode(SLEEPN,     OUTPUT);
   pinMode(OUT1,       OUTPUT);
   pinMode(OUT2,       OUTPUT);
+  pinMode(VOLTAGE_IN, INPUT);
 
   // Initialize PWM input reader
   initializePWMReader();
@@ -148,6 +157,7 @@ void loop() {
     // Declare local variables
     float rawvelocity;
     dir_t direction;
+    float voltage = readVoltage();
 
     // Reject signals that are way off (i.e. const. 0 V, const. +5 V, noise)
     if ( pulsein >= INPUT_MIN && pulsein <= INPUT_MAX ) {
@@ -175,15 +185,15 @@ void loop() {
     }
 
     // Set filter gain based on input voltage
-//     outputfilter.setGain();
+   outputfilter.setGain(1.0f/currentRatio(voltage));
 
     // Filter velocity
     velocity = constrain(outputfilter.step(rawvelocity), -MAX_COUNT,
                          MAX_COUNT);
 
-    if (velocity > INPUT_DZ*CNT_PER_US) {
+    if (velocity > INPUT_DZ*CNT_PER_US/currentRatio(voltage)) {
         direction = FORWARD;
-    } else if (velocity < -INPUT_DZ*CNT_PER_US) {
+    } else if (velocity < -INPUT_DZ*CNT_PER_US/currentRatio(voltage)) {
         direction = REVERSE;
     } else {
         direction = NONE;
@@ -230,11 +240,11 @@ void loop() {
   if ( micros() > updatecurrentruntime ) {
     // Set next current lp filter runtime
     updatecurrentruntime = micros() + CURRENT_DT*1000000;
-    currentfilter.step(readCurrent()/stallCurrent(velocity));
+    currentfilter.step(readCurrent()/stallCurrent(velocity, readVoltage()));
   } // end current lp filter
 }
 
-float stallCurrent(float speed_counts) {
+float stallCurrent(float speed_counts, float voltage) {
   float i_stall;
   float speed = abs(speed_counts/MAX_COUNT);
   if (speed > 0.9*OUTPUT_DZ && speed < 1.1) {
@@ -243,7 +253,11 @@ float stallCurrent(float speed_counts) {
     i_stall = INFINITY;
   }
 
-  return i_stall;
+  return i_stall*currentRatio(voltage);
+}
+
+float currentRatio(float voltage) {
+  return (voltage - V_BASE)*I_RATIO_A1 + 1.0f;
 }
 
 void initializePWMOutput() {
@@ -289,7 +303,12 @@ void initializePWMReader() {
 // Read current (in amperes)
 float readCurrent() {
   // Reported voltage is 10x actual drop across the sense resistor
-  return (analogRead(CURRENT_IN)*3.3f)/(1023.0f*10.0f*R_SENSE);
+  return (analogRead(CURRENT_IN)*V_IN)/(1023.0f*10.0f*R_SENSE);
+}
+
+// Read input voltage (volts)
+float readVoltage() {
+  return (analogRead(VOLTAGE_IN)*V_IN)/(1023.0f*V_SENSE_DIV);
 }
 
 
