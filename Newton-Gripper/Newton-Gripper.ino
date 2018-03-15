@@ -70,7 +70,15 @@ THE SOFTWARE.
 
 // PWM OUTPUT CHARACTERISTICS
 #define OUTPUT_DZ   0.60f             // speed 0.0~1.0 (deadzone)
-#define MAX_DUTY    0.90f             // Limits duty cycle to save (12 V) motor
+#define MAX_DUTY    1.00f             // sets maximum output @ reference voltage
+
+// MAX/MIN DUTY PARAMETERS
+#define MAX_DUTY_A0 1.55f             // max duty curve constant term
+#define MAX_DUTY_A1 -0.063f           // max duty curve linear term
+#define MAX_DUTY_A2 0.0011f           // max duty curve quadratic term
+#define MIN_DUTY_A0 0.87f             // min duty curve constant term
+#define MIN_DUTY_A1 -0.027f           // min duty curve linear term
+#define MIN_DUTY_A2 0.00048f          // min duty curve quadratic term
 
 // FILTER PARAMETERS
 #define FILTER_DT   0.050f            // s
@@ -80,15 +88,15 @@ THE SOFTWARE.
 #define CURRENT_DT  0.00010f          // s
 
 // STALL PARAMETERS
-#define I_STALL_A0  6.47f             // stall current curve const. term
-#define I_STALL_A1  -21.3f            // stall current curve linear term
-#define I_STALL_A2  19.4f             // stall current curve quadratic term
+#define I_STALL_A0  0.00514f          // stall current const. coefficient term
+#define I_STALL_A1  0.00294f          // stall current linear coefficient term
+#define I_STALL_B1  4.69f             // stall current exponential term
 #define I_LIMIT_IN  0.50f             // fraction of stall current (closing)
 #define I_LIMIT_OUT 0.70f             // fraction of stall current (opening)
 
 // CURRENT/VOLTAGE PARAMETERS
 #define V_BASE      12.0f             // voltage at which measurements were made
-#define I_RATIO_A1  0.0756f           // current ratio linear term
+#define I_RATIO_A1  0.0833f           // current ratio linear term
 
 // Custom Enumerated Types
 enum dir_t {
@@ -158,6 +166,8 @@ void loop() {
     float rawvelocity;
     dir_t direction;
     float voltage = readVoltage();
+    float maxduty = min(maxDuty(voltage),MAX_DUTY);
+    float minduty = max(minDuty(voltage),0.0f);
 
     // Reject signals that are way off (i.e. const. 0 V, const. +5 V, noise)
     if ( pulsein >= INPUT_MIN && pulsein <= INPUT_MAX ) {
@@ -167,12 +177,12 @@ void loop() {
       // Reject anything inside input deadzone
       if ( pw > INPUT_DZ ) {
         // Map valid PWM signals to (0.0 to 1.0]
-        rawvelocity = ((float)(pw - INPUT_DZ)/(HALF_RANGE - INPUT_DZ)
-                      *(MAX_DUTY - OUTPUT_DZ) + OUTPUT_DZ)*MAX_COUNT;
+        rawvelocity = (float)(pw - INPUT_DZ)/(HALF_RANGE - INPUT_DZ)
+                      *(maxduty - minduty) + minduty;
       } else if ( pw < -INPUT_DZ ) {
         // Map valid PWM signals to [-1.0 to 0.0)
-        rawvelocity = ((float)(pw + INPUT_DZ)/(HALF_RANGE - INPUT_DZ)
-                      *(MAX_DUTY - OUTPUT_DZ) - OUTPUT_DZ)*MAX_COUNT;
+        rawvelocity = (float)(pw + INPUT_DZ)/(HALF_RANGE - INPUT_DZ)
+                      *(maxduty - minduty) - minduty;
       } else {
         // Stop motor if input is within input deadzone
         rawvelocity = 0.0f;
@@ -184,16 +194,13 @@ void loop() {
       outputfilter.clear();
     }
 
-    // Set filter gain based on input voltage
-   outputfilter.setGain(1.0f/currentRatio(voltage));
-
     // Filter velocity
-    velocity = constrain(outputfilter.step(rawvelocity), -MAX_COUNT,
-                         MAX_COUNT);
+    velocity = constrain(outputfilter.step(rawvelocity), -maxduty, maxduty);
 
-    if (velocity > INPUT_DZ*CNT_PER_US/currentRatio(voltage)) {
+    // Figure out the current direction of travel
+    if (velocity > minduty) {
         direction = FORWARD;
-    } else if (velocity < -INPUT_DZ*CNT_PER_US/currentRatio(voltage)) {
+    } else if (velocity < -minduty) {
         direction = REVERSE;
     } else {
         direction = NONE;
@@ -222,11 +229,11 @@ void loop() {
 
     // Set output PWM timers
     if ( direction == FORWARD && limit != FORWARD) {
-      OCR1A = abs(velocity);
+      OCR1A = abs(velocity)*MAX_COUNT;
       OCR1B = 0;
     } else if ( direction == REVERSE && limit != REVERSE) {
       OCR1A = 0;
-      OCR1B = abs(velocity);
+      OCR1B = abs(velocity)*MAX_COUNT;
     } else {
       OCR1A = MAX_COUNT;
       OCR1B = MAX_COUNT;
@@ -244,20 +251,16 @@ void loop() {
   } // end current lp filter
 }
 
-float stallCurrent(float speed_counts, float voltage) {
-  float i_stall;
-  float speed = abs(speed_counts/MAX_COUNT);
-  if (speed > 0.9*OUTPUT_DZ && speed < 1.1) {
-    i_stall = I_STALL_A0 + I_STALL_A1*speed + I_STALL_A2*speed*speed;
-  } else {
-    i_stall = INFINITY;
-  }
-
-  return i_stall*currentRatio(voltage);
+float stallCurrent(float velocity, float voltage) {
+  return (I_STALL_A0 + I_STALL_A1*voltage)*exp(I_STALL_B1*abs(velocity));
 }
 
-float currentRatio(float voltage) {
-  return (voltage - V_BASE)*I_RATIO_A1 + 1.0f;
+float maxDuty(float voltage) {
+  return MAX_DUTY_A0 + MAX_DUTY_A1*voltage + MAX_DUTY_A2*voltage*voltage;
+}
+
+float minDuty(float voltage) {
+  return MIN_DUTY_A0 + MIN_DUTY_A1*voltage + MIN_DUTY_A2*voltage*voltage;
 }
 
 void initializePWMOutput() {
