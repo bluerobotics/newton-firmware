@@ -186,12 +186,10 @@ void loop() {
       } else {
         // Stop motor if input is within input deadzone
         rawvelocity = 0.0f;
-        outputfilter.clear();
       }
     } else {
       // Stop motor if input is invalid
       rawvelocity = 0.0f;
-      outputfilter.clear();
     }
 
     // Filter velocity
@@ -216,11 +214,9 @@ void loop() {
     if (direction == REVERSE && currentfilter.getLastOutput() > I_LIMIT_OUT) {
       limit = direction;
       digitalWrite(LED, LOW);
-      // currentfilter.clear();
     } else if (direction == FORWARD && currentfilter.getLastOutput() > I_LIMIT_IN) {
       limit = direction;
       digitalWrite(LED, LOW);
-      // currentfilter.clear();
     } else if ( /*direction != NONE &&*/ limit != NONE && direction != limit ) {
       // We're going the opposite direction from the limit, so clear limit
       limit = NONE;
