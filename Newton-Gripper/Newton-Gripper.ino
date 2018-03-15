@@ -209,12 +209,11 @@ void loop() {
       currentfilter.clear();
     }
 
-
     // Current sensor resolution: ~65 mA
-    if (direction == REVERSE && currentfilter.getLastOutput() > I_LIMIT_OUT) {
+    if (direction == FORWARD && currentfilter.getLastOutput() > I_LIMIT_OUT) {
       limit = direction;
       digitalWrite(LED, LOW);
-    } else if (direction == FORWARD && currentfilter.getLastOutput() > I_LIMIT_IN) {
+    } else if (direction == REVERSE && currentfilter.getLastOutput() > I_LIMIT_IN) {
       limit = direction;
       digitalWrite(LED, LOW);
     } else if ( /*direction != NONE &&*/ limit != NONE && direction != limit ) {
