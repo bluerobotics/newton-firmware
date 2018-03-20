@@ -74,7 +74,7 @@ THE SOFTWARE.
 
 // MAX/MIN DUTY PARAMETERS
 #define MAX_DUTY_A0 1.55f             // max duty curve constant term
-#define MAX_DUTY_A1 -0.063f           // max duty curve linear term
+#define MAX_DUTY_A1 -0.060f           // max duty curve linear term
 #define MAX_DUTY_A2 0.0011f           // max duty curve quadratic term
 #define MIN_DUTY_A0 0.87f             // min duty curve constant term
 #define MIN_DUTY_A1 -0.027f           // min duty curve linear term
