@@ -69,7 +69,6 @@ THE SOFTWARE.
 #define MAX_COUNT   0x0FFF          // sets output PWM frequency (~1 kHz)
 
 // PWM OUTPUT CHARACTERISTICS
-#define OUTPUT_DZ   0.60f             // speed 0.0~1.0 (deadzone)
 #define MAX_DUTY    1.00f             // sets maximum output @ reference voltage
 
 // MAX/MIN DUTY PARAMETERS
@@ -93,10 +92,6 @@ THE SOFTWARE.
 #define I_STALL_B1  4.69f             // stall current exponential term
 #define I_LIMIT_IN  0.50f             // fraction of stall current (closing)
 #define I_LIMIT_OUT 0.70f             // fraction of stall current (opening)
-
-// CURRENT/VOLTAGE PARAMETERS
-#define V_BASE      12.0f             // voltage at which measurements were made
-#define I_RATIO_A1  0.0833f           // current ratio linear term
 
 
 // Custom Enumerated Types
