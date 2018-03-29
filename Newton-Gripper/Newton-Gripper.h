@@ -69,7 +69,8 @@ THE SOFTWARE.
 #define MAX_COUNT     0x0FFF            // sets output PWM freq. (~1 kHz)
 
 // PWM OUTPUT CHARACTERISTICS
-#define MAX_DUTY      1.00f             // sets absolute maximum output
+#define MAX_DUTY_ABS  1.00f             // sets absolute maximum output
+#define MIN_DUTY_TOL  0.97f             // minimum duty tolerance
 
 // MAX/MIN DUTY PARAMETERS
 #define MAX_DUTY_A0   1.55f             // max duty curve constant term

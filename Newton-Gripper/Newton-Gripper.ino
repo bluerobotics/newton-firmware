@@ -132,8 +132,8 @@ void runSpeedFilter() {
   float rawvelocity;
   dir_t direction;
   float voltage = readVoltage();
-  float maxduty = min(maxDuty(voltage),MAX_DUTY);
-  float minduty = max(minDuty(voltage),0.0f);
+  float maxduty = constrain(maxDuty(voltage),0.0f,MAX_DUTY_ABS);
+  float minduty = constrain(minDuty(voltage),0.0f,maxduty);
 
   // Reject signals that are way off (i.e. const. 0 V, const. +5 V, noise)
   if ( pulsein >= INPUT_MIN && pulsein <= INPUT_MAX ) {
@@ -162,9 +162,9 @@ void runSpeedFilter() {
   velocity = constrain(speedfilter.step(rawvelocity), -maxduty, maxduty);
 
   // Figure out the current direction of travel
-  if (velocity > minduty) {
+  if (velocity > MIN_DUTY_TOL*minduty) {
       direction = FORWARD;
-  } else if (velocity < -minduty) {
+  } else if (velocity < -MIN_DUTY_TOL*minduty) {
       direction = REVERSE;
   } else {
       direction = NONE;
