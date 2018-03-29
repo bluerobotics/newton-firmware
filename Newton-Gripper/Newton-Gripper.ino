@@ -178,14 +178,14 @@ void runSpeedFilter() {
   // Current sensor resolution: ~65 mA
   if (direction == FORWARD && currentfilter.getLastOutput() > I_LIMIT_OUT) {
     limit = direction;
-    digitalWrite(LED, LOW);
+    digitalWrite(LED, HIGH);
   } else if (direction == REVERSE && currentfilter.getLastOutput() > I_LIMIT_IN) {
     limit = direction;
-    digitalWrite(LED, LOW);
+    digitalWrite(LED, HIGH);
   } else if ( /*direction != NONE &&*/ limit != NONE && direction != limit ) {
     // We're going the opposite direction from the limit, so clear limit
     limit = NONE;
-    digitalWrite(LED, HIGH);
+    digitalWrite(LED, LOW);
   }
 
   // Set output PWM timers
