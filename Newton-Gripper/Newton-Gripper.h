@@ -76,23 +76,23 @@ THE SOFTWARE.
 #define MAX_DUTY_A0   1.55f             // max duty curve constant term
 #define MAX_DUTY_A1   -0.060f           // max duty curve linear term
 #define MAX_DUTY_A2   0.0011f           // max duty curve quadratic term
-#define MIN_DUTY_A0   0.87f             // min duty curve constant term
-#define MIN_DUTY_A1   -0.027f           // min duty curve linear term
+#define MIN_DUTY_A0   1.15f             // min duty curve constant term
+#define MIN_DUTY_A1   -0.0273f          // min duty curve linear term
 #define MIN_DUTY_A2   0.00048f          // min duty curve quadratic term
 
 // FILTER PARAMETERS
 #define FILTER_DT     0.050f            // s
 #define TAUP_OUT      0.300f            // sets lp filtering of lead-lag (s)
 #define TAUN_OUT      TAUP_OUT/1.5f     // sets starting gain of lead-lag (s)
-#define TAU_CURRENT   0.03000f          // s
+#define TAU_CURRENT   0.01000f          // s
 #define CURRENT_DT    0.00010f          // s
 
 // STALL PARAMETERS
 #define I_STALL_A0    0.00514f          // stall current const. coefficient term
 #define I_STALL_A1    0.00294f          // stall current linear coefficient term
 #define I_STALL_B1    4.69f             // stall current exponential term
-#define I_LIMIT_IN    0.50f             // fraction of stall current (closing)
-#define I_LIMIT_OUT   0.70f             // fraction of stall current (opening)
+#define I_LIMIT_IN    0.70f             // fraction of stall current (closing)
+#define I_LIMIT_OUT   0.90f             // fraction of stall current (opening)
 
 
 // Custom Enumerated Types
