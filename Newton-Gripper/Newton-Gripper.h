@@ -4,7 +4,19 @@
 Title: Blue Robotics Newton Gripper Firmware
 
 Description: This code is the default firmware for the Blue Robotics
-Newton Gripper, which...
+Newton Gripper.  A PWM signal dictates the speed at which the gripper opens or
+closes, with speeds above 1500 (plus a deadzone) closing the jaws and those
+below 1500 (minus a deadzone) openning the jaws.  A current sensor detects when
+the endstops are reached or when an object is in the way of the jaws, and
+disables the motor until commanded to stop or reverse direction.
+
+The current detection code adjusts for different stall currents at different
+input voltages between 9 and 18 volts DC.  Smooth operation is not guaranteed
+outside this range and input voltages exceeding 21 VDC should be avoided as this
+can cause damage to the microcontroller.
+
+This code requires the following library:
+https://github.com/dheideman/DiscreteFilter
 
 The code is designed for the ATtiny84 microcontroller and can be compiled and
 uploaded via the Arduino 1.0+ software.
