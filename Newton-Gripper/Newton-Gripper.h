@@ -88,9 +88,9 @@ THE SOFTWARE.
 #define MAX_DUTY_A0   1.55f             // max duty curve constant term
 #define MAX_DUTY_A1   -0.060f           // max duty curve linear term
 #define MAX_DUTY_A2   0.0011f           // max duty curve quadratic term
-#define MIN_DUTY_A0   1.15f             // min duty curve constant term
-#define MIN_DUTY_A1   -0.0273f          // min duty curve linear term
-#define MIN_DUTY_A2   0.00048f          // min duty curve quadratic term
+#define MIN_DUTY_A0   1.37f             // min duty curve constant term
+#define MIN_DUTY_A1   -0.059f           // min duty curve linear term
+#define MIN_DUTY_A2   0.00164f          // min duty curve quadratic term
 
 // FILTER PARAMETERS
 #define FILTER_DT     0.050f            // s
