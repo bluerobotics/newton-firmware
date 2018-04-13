@@ -49,9 +49,9 @@ THE SOFTWARE.
 #include "Newton-Gripper.h"
 
 // Global Variables
-uint32_t lastpulsetime        = 0;
-uint32_t speedfilterruntime   = 0;
-uint32_t currentfilterruntime = 0;
+uint32_t lastpulsetime            = 0;
+uint32_t lastspeedfilterruntime   = 0;
+uint32_t lastcurrentfilterruntime = 0;
 
 int16_t  pulsein  = PWM_NEUTRAL;
 dir_t    limit    = NONE;
@@ -110,18 +110,18 @@ void loop() {
   } // end pwm input check
 
   // Run speed filter at specified interval
-  if ( millis() > speedfilterruntime ) {
+  if ( (millis() - lastspeedfilterruntime)/1000.0f > FILTER_DT ) {
     // Set next filter runtime
-    speedfilterruntime = millis() + FILTER_DT*1000;
+    lastspeedfilterruntime = millis();
 
     // Update input filter
     runSpeedFilter();
   } // end run filters
 
   // Run current lp filter at specified interval
-  if ( micros() > currentfilterruntime ) {
+  if ( (micros() - lastcurrentfilterruntime)/1000000.0f > CURRENT_DT ) {
     // Set next current lp filter runtime
-    currentfilterruntime = micros() + CURRENT_DT*1000000;
+    lastcurrentfilterruntime = micros();
 
     // Update current filter
     currentfilter.step(readCurrent()/stallCurrent(velocity, readVoltage()));
