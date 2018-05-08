@@ -45,15 +45,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 -------------------------------*/
 
+#include <util/atomic.h>
 #include <DiscreteFilter.h>
 #include "Newton-Gripper.h"
 
 // Global Variables
-uint32_t lastpulsetime            = 0;
+volatile uint32_t pulsetime = 0;
+volatile int16_t  pulsein   = PWM_NEUTRAL;
+
 uint32_t lastspeedfilterruntime   = 0;
 uint32_t lastcurrentfilterruntime = 0;
-
-int16_t  pulsein  = PWM_NEUTRAL;
 dir_t    limit    = NONE;
 dir_t    lastdir  = NONE;
 float    velocity = 0.0f;
@@ -102,11 +103,19 @@ void setup() {
 //////////
 
 void loop() {
+  // Save local version of pulsetime
+  uint32_t tpulse;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    tpulse = pulsetime;
+  }
+
   // Make sure we're still receiving PWM inputs
-  if ( (millis() - lastpulsetime)/1000.0f > INPUT_TOUT ) {
+  if ( (millis() - tpulse)/1000.0f > INPUT_TOUT ) {
     // If it has been too long since the last input, shut off motor
-    pulsein = PWM_NEUTRAL;
-    lastpulsetime = millis();
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      pulsein   = PWM_NEUTRAL;
+      pulsetime = millis();
+    }
   } // end pwm input check
 
   // Run speed filter at specified interval
@@ -147,10 +156,16 @@ void runSpeedFilter() {
   float maxduty = constrain(maxDuty(voltage),0.0f,MAX_DUTY_ABS);
   float minduty = constrain(minDuty(voltage),0.0f,maxduty);
 
+  // Save pulsein locally
+  int16_t pulsewidth;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    pulsewidth = pulsein;
+  }
+
   // Reject signals that are way off (i.e. const. 0 V, const. +5 V, noise)
-  if ( pulsein >= INPUT_MIN && pulsein <= INPUT_MAX ) {
+  if ( pulsewidth >= INPUT_MIN && pulsewidth <= INPUT_MAX ) {
     // Remove neutral PWM bias & clamp to [-HALF_RANGE, HALF_RANGE]
-    int16_t pw = constrain(pulsein - PWM_NEUTRAL, -HALF_RANGE, HALF_RANGE);
+    int16_t pw = constrain(pulsewidth - PWM_NEUTRAL, -HALF_RANGE, HALF_RANGE);
 
     // Reject anything inside input deadzone
     if ( pw > INPUT_DZ ) {
@@ -197,19 +212,26 @@ void runSpeedFilter() {
   } else if ( /*direction != NONE &&*/ limit != NONE && direction != limit ) {
     // We're going the opposite direction from the limit, so clear limit
     limit = NONE;
+    // currentfilter.clear();
     digitalWrite(LED, LOW);
   }
 
   // Set output PWM timers
   if ( direction == FORWARD && limit != FORWARD) {
-    OCR1A = abs(velocity)*MAX_COUNT;
-    OCR1B = 0;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      OCR1A = abs(velocity)*MAX_COUNT;
+      OCR1B = 0;
+    }
   } else if ( direction == REVERSE && limit != REVERSE) {
-    OCR1A = 0;
-    OCR1B = abs(velocity)*MAX_COUNT;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      OCR1A = 0;
+      OCR1B = abs(velocity)*MAX_COUNT;
+    }
   } else {
-    OCR1A = MAX_COUNT;
-    OCR1B = MAX_COUNT;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      OCR1A = MAX_COUNT;
+      OCR1B = MAX_COUNT;
+    }
   }
 
   // Save last direction
@@ -320,7 +342,7 @@ void initializePWMReader() {
 
 // Define global variables only used for input timer
 namespace {
-  uint32_t inputpulsestart = 0xFFFF;
+  volatile uint32_t inputpulsestart = 0xFFFF;
 }
 
 /******************************************************************************
@@ -331,13 +353,14 @@ namespace {
 SIGNAL(INT0_vect) {
   if (digitalRead(PWM_IN)) {
     // Record start of input pulse
-    inputpulsestart = micros();
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      inputpulsestart = micros();
+    }
   } else {
     // Measure width of input pulse
-    // Only use data for which the start time comes first (ignore rollovers)
-    if ( inputpulsestart < micros() ) {
-      pulsein = micros() - inputpulsestart;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      pulsein   = micros() - inputpulsestart;
+      pulsetime = millis();
     }
-    lastpulsetime = millis();
   }
 }
