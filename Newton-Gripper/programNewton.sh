@@ -23,12 +23,14 @@ logfile="$dir/programnewton.log"
 echo "Starting Newton Flash Sequence..."
 
 #Write program and set fuses
-$avrdude -c$programmer -p$microcontroller -e -Uefuse:w:0xff:m -Uhfuse:w:0xdf:m -Ulfuse:w:0xfe:m -Uflash:w:$hexfile 2>&1 | tee $logfile
+$avrdude -c$programmer -p$microcontroller -e -Uefuse:w:0xff:m -Uhfuse:w:0xdf:m -Ulfuse:w:0xfe:m -Uflash:w:$hexfile -u 2>&1 | tee $logfile
 
 echo -e "${BLUE}=========RESULT=========="
 echo -e "${GREEN}"
+grep "bytes of efuse verified" $logfile
+grep "bytes of hfuse verified" $logfile
+grep "bytes of lfuse verified" $logfile
 grep "bytes of flash verified" $logfile
-grep "avrdude: safemode: Fuses OK (E:FF, H:DF, L:FE)" $logfile
 echo -e "${RED}"
 grep "mismatch" $logfile
 echo -e "${NC}"
