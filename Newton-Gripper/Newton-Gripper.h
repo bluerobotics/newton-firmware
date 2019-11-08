@@ -103,8 +103,8 @@ THE SOFTWARE.
 #define I_STALL_A0    0.00514f          // stall current const. coefficient term
 #define I_STALL_A1    0.00294f          // stall current linear coefficient term
 #define I_STALL_B1    4.69f             // stall current exponential term
-#define I_LIMIT_IN    0.70f             // fraction of stall current (closing)
-#define I_LIMIT_OUT   0.90f             // fraction of stall current (opening)
+#define I_LIMIT_IN    0.55f             // fraction of stall current (closing)
+#define I_LIMIT_OUT   0.75f             // fraction of stall current (opening)
 
 
 // Custom Enumerated Types
