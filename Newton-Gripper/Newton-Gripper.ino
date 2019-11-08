@@ -61,8 +61,6 @@ float    velocity = 0.0f;
 DiscreteFilter speedfilter;
 DiscreteFilter currentfilter;
 
-
-
 ///////////
 // SETUP //
 ///////////
@@ -217,20 +215,61 @@ void runSpeedFilter() {
   }
 
   // Set output PWM timers
+  // This section includes Rusty's hacky slew rate limiting, which reduces motor sparking.
+  int newOcr1A, newOcr1B;
+  int SLEWRATE = 256; // per cycle out of 4096
   if ( direction == FORWARD && limit != FORWARD) {
+    // Rusty: this is here to slew the OCR values smoothly
+    if ( OCR1A < abs(velocity)*MAX_COUNT - SLEWRATE ) {
+      newOcr1A = OCR1A + SLEWRATE;
+    } else {
+      newOcr1A = abs(velocity)*MAX_COUNT;
+    }
+    if ( OCR1B > SLEWRATE ) {
+      newOcr1B = OCR1B - SLEWRATE;
+    } else {
+      newOcr1B = 0;
+    }
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-      OCR1A = abs(velocity)*MAX_COUNT;
-      OCR1B = 0;
+      OCR1A = newOcr1A;
+      OCR1B = newOcr1B;
     }
   } else if ( direction == REVERSE && limit != REVERSE) {
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-      OCR1A = 0;
-      OCR1B = abs(velocity)*MAX_COUNT;
+    // Rusty: this is here to slew the OCR values smoothly
+    if ( OCR1B < abs(velocity)*MAX_COUNT - SLEWRATE ) {
+      newOcr1B = OCR1B + SLEWRATE;
+    } else {
+      newOcr1B = abs(velocity)*MAX_COUNT;
     }
-  } else {
+    if ( OCR1A > SLEWRATE ) {
+      newOcr1A = OCR1A - SLEWRATE;
+    } else {
+      newOcr1A = 0;
+    }
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      OCR1A = newOcr1A;
+      OCR1B = newOcr1B;
+    }
+  } else if ( limit == FORWARD || limit == REVERSE ) { // If you're at a stop, stop immediately
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
       OCR1A = MAX_COUNT;
       OCR1B = MAX_COUNT;
+    }
+  } else {
+    // Rusty: this is here to slew the OCR values smoothly
+    if ( OCR1A < MAX_COUNT - SLEWRATE ) {
+      newOcr1A = OCR1A + SLEWRATE;
+    } else {
+      newOcr1A = MAX_COUNT;
+    }
+    if ( OCR1B < MAX_COUNT - SLEWRATE ) {
+      newOcr1B = OCR1B + SLEWRATE;
+    } else {
+      newOcr1B = MAX_COUNT;
+    }
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      OCR1A = newOcr1A;
+      OCR1B = newOcr1B;
     }
   }
 

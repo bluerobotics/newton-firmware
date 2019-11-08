@@ -93,7 +93,7 @@ THE SOFTWARE.
 #define MIN_DUTY_A2   0.00164f          // min duty curve quadratic term
 
 // FILTER PARAMETERS
-#define FILTER_DT     0.050f            // s
+#define FILTER_DT     0.002f            // s
 #define TAUP_OUT      0.300f            // sets lp filtering of lead-lag (s)
 #define TAUN_OUT      TAUP_OUT/1.5f     // sets starting gain of lead-lag (s)
 #define TAU_CURRENT   0.01000f          // s
