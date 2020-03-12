@@ -55,16 +55,7 @@ THE SOFTWARE.
 #define OUT1          6                 // OCR1A
 #define OUT2          5                 // OCR1B
 #define VOLTAGE_IN    0                 // from voltage divider
-
-// CURRENT SENSOR
-#define R_SENSE       0.005f            // ohms
-
-// VOLTAGE SENSOR
-#define V_IN          3.3f              // volts
-#define V_SENSE_DIV   0.155f            // v_sense voltage divider: 3.3/(3.3+18)
-
-// PWM INPUT TIMEOUT
-#define INPUT_TOUT    0.050f            // s
+#define OCL           2                 // OCP and OVP output flag, open drain
 
 // PWM READ DEFINITIONS
 #define PWM_FREQ      50                // Hz
@@ -76,40 +67,42 @@ THE SOFTWARE.
 #define INPUT_MAX     2500              // us
 #define INPUT_MIN     500               // us
 #define INPUT_DZ      30                // us
+#define INPUT_TOUT    0.050f            // s
+
+//Fault Detection Parameters
+#define OCL_DT        0.010f            // s 100Hz
+
+// VOLTAGE SENSOR AND FILTER DEFINITIONS
+#define V_IN          3.3f              // volts
+#define V_SENSE_DIV   0.155f            // v_sense voltage divider: 3.3/(3.3+18)
+
+// CURRENT SENSOR AND FILTER PARAMETERS
+#define R_SENSE       0.005f            // ohms
+#define TAU_CURRENT   0.0050f          // s
+#define CURRENT_DT    0.00010f          // s
+
+// VELOCITY FILTER PARAMETERS
+#define FILTER_DT     0.0050f           // s
+#define TAUP_OUT      0.015f            // sets rise time of lead-lag (s) increase to slow rise time
+#define TAUN_OUT      TAUP_OUT/0.35f     // sets starting gain of lead-lag. Gain(t=0) = TAUN_OUT/TAUP_OUT = TAUP_OUT/(0.35f*TAUP_OUT)
+#define BRAKE         0.94f             // 0.0 to 1.0 fraction of MAX_COUNT for braking. Default = 0.94   
+
+//PWM OUTPUT DEFINITIONS
 #define PRESCALE      1                 // must match TCCR1B settings
 #define CNT_PER_US    (F_CPU/PRESCALE/1000000L) // timer counts
 #define MAX_COUNT     0x0FFF            // sets output PWM freq. (~1 kHz)
 
-// PWM OUTPUT CHARACTERISTICS
-#define MAX_DUTY_ABS  1.00f             // sets absolute maximum output
-#define MIN_DUTY_TOL  0.97f             // minimum duty tolerance
-
-// MAX/MIN DUTY PARAMETERS
-#define MAX_DUTY_A0   1.55f             // max duty curve constant term
-#define MAX_DUTY_A1   -0.060f           // max duty curve linear term
-#define MAX_DUTY_A2   0.0011f           // max duty curve quadratic term
-#define MIN_DUTY_A0   1.37f             // min duty curve constant term
-#define MIN_DUTY_A1   -0.059f           // min duty curve linear term
-#define MIN_DUTY_A2   0.00164f          // min duty curve quadratic term
-
-// FILTER PARAMETERS
-#define FILTER_DT     0.050f            // s
-#define TAUP_OUT      0.300f            // sets lp filtering of lead-lag (s)
-#define TAUN_OUT      TAUP_OUT/1.5f     // sets starting gain of lead-lag (s)
-#define TAU_CURRENT   0.01000f          // s
-#define CURRENT_DT    0.00010f          // s
-
 // STALL PARAMETERS
-#define I_STALL_A0    0.00514f          // stall current const. coefficient term
-#define I_STALL_A1    0.00294f          // stall current linear coefficient term
-#define I_STALL_B1    4.69f             // stall current exponential term
-#define I_LIMIT_IN    0.70f             // fraction of stall current (closing)
-#define I_LIMIT_OUT   0.90f             // fraction of stall current (opening)
+#define MOT_FS        1.50f             // Factor to guarantee that the ESC will shutoff Motor
+#define R_MOT         3.16f             // Motor Resistance (Ohms)
+#define MOT_I_MAX     3.8f              // Sets the upper bound of stall current. Usefull when gripper is driven outside of rated voltage. 
+#define I_LIMIT_CLOSE 0.70f             // fraction of stall current (closing)
+#define I_LIMIT_OPEN  0.95f             // fraction of stall current (opening)
 
 
 // Custom Enumerated Types
 enum dir_t {
   NONE = 0,
-  FORWARD,
-  REVERSE
+  OPEN,
+  CLOSE
 };
