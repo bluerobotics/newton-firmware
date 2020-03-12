@@ -55,9 +55,14 @@ volatile int16_t  pulsein   = PWM_NEUTRAL;
 
 uint32_t lastspeedfilterruntime   = 0;
 uint32_t lastcurrentfilterruntime = 0;
+uint32_t lastOCLdetectionruntime = 0;
+int      OCLcounter = 0;
 dir_t    limit    = NONE;
 dir_t    lastdir  = NONE;
+dir_t    direction;
+
 float    velocity = 0.0f;
+
 DiscreteFilter speedfilter;
 DiscreteFilter currentfilter;
 
@@ -117,7 +122,25 @@ void loop() {
       pulsetime = millis();
     }
   } // end pwm input check
+    
+    //Set endstop condition if Motor Driver detects a fault 
+  if ( (millis() - lastOCLdetectionruntime)/1000.0f > OCL_DT ) {
+    // Set next filter runtime
+    lastOCLdetectionruntime = millis();
 
+    if (digitalRead(OCL) == LOW) {
+        if (OCLcounter > 5) {
+           limit = direction;
+           digitalWrite(LED, LOW);
+           setMotorOutput(direction, limit, velocity);
+        } else {
+          OCLcounter++;
+        }
+    } else {
+      OCLcounter = 0;
+    }
+  }
+  
   // Run speed filter at specified interval
   if ( (millis() - lastspeedfilterruntime)/1000.0f > FILTER_DT ) {
     // Set next filter runtime
@@ -151,11 +174,8 @@ void loop() {
 void runSpeedFilter() {
   // Declare local variables
   float rawvelocity;
-  dir_t direction;
   float voltage = readVoltage();
-  float maxduty = constrain(maxDuty(voltage),0.0f,MAX_DUTY_ABS);
-  float minduty = constrain(minDuty(voltage),0.0f,maxduty);
-
+  
   // Save pulsein locally
   int16_t pulsewidth;
   ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
@@ -170,29 +190,24 @@ void runSpeedFilter() {
     // Reject anything inside input deadzone
     if ( pw > INPUT_DZ ) {
     // Map valid PWM signals to (0.0 to 1.0]
-      rawvelocity = (float)(pw - INPUT_DZ)/(HALF_RANGE - INPUT_DZ)
-                    *(maxduty - minduty) + minduty;
+      rawvelocity = 1.0f;
     } else if ( pw < -INPUT_DZ ) {
       // Map valid PWM signals to [-1.0 to 0.0)
-      rawvelocity = (float)(pw + INPUT_DZ)/(HALF_RANGE - INPUT_DZ)
-                    *(maxduty - minduty) - minduty;
+      rawvelocity = -1.0f;
     } else {
       // Stop motor if input is within input deadzone
       rawvelocity = 0.0f;
     }
-  } else {
-    // Stop motor if input is invalid
-    rawvelocity = 0.0f;
   }
 
   // Filter velocity
-  velocity = constrain(speedfilter.step(rawvelocity), -maxduty, maxduty);
-
+  velocity = constrain(speedfilter.step(rawvelocity), -1.0f, 1.0f);
+   
   // Figure out the current direction of travel
-  if (velocity > MIN_DUTY_TOL*minduty) {
-      direction = FORWARD;
-  } else if (velocity < -MIN_DUTY_TOL*minduty) {
-      direction = REVERSE;
+  if (velocity > 0.05) {
+      direction = OPEN;
+  } else if (velocity < -0.05) {
+      direction = CLOSE;
   } else {
       direction = NONE;
   }
@@ -203,10 +218,10 @@ void runSpeedFilter() {
   }
 
   // Current sensor resolution: ~65 mA
-  if (direction == FORWARD && currentfilter.getLastOutput() > I_LIMIT_OUT) {
+  if (direction == OPEN && currentfilter.getLastOutput() > I_LIMIT_OPEN) {
     limit = direction;
     digitalWrite(LED, HIGH);
-  } else if (direction == REVERSE && currentfilter.getLastOutput() > I_LIMIT_IN) {
+  } else if (direction == CLOSE && currentfilter.getLastOutput() > I_LIMIT_CLOSE) {
     limit = direction;
     digitalWrite(LED, HIGH);
   } else if ( /*direction != NONE &&*/ limit != NONE && direction != limit ) {
@@ -216,28 +231,37 @@ void runSpeedFilter() {
     digitalWrite(LED, LOW);
   }
 
-  // Set output PWM timers
-  if ( direction == FORWARD && limit != FORWARD) {
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-      OCR1A = abs(velocity)*MAX_COUNT;
-      OCR1B = 0;
-    }
-  } else if ( direction == REVERSE && limit != REVERSE) {
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-      OCR1A = 0;
-      OCR1B = abs(velocity)*MAX_COUNT;
-    }
-  } else {
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-      OCR1A = MAX_COUNT;
-      OCR1B = MAX_COUNT;
-    }
-  }
+  setMotorOutput(direction, limit, velocity);
 
   // Save last direction
   lastdir = direction;
 }
 
+/******************************************************************************
+ * void setMotorOutput()
+ *
+ * Sets PWM output to motor controller
+ ******************************************************************************/
+void setMotorOutput(dir_t direction, dir_t limit, float velocity) {
+    
+    // Set output PWM timers
+  if ( direction == OPEN && limit != OPEN) {
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      OCR1A = fabs(velocity)*MAX_COUNT;
+      OCR1B = 0;
+    }
+  } else if ( direction == CLOSE && limit != CLOSE) {
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      OCR1A = 0;
+      OCR1B = fabs(velocity)*MAX_COUNT;
+    } 
+  } else {
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      OCR1A = BRAKE*MAX_COUNT;
+      OCR1B = BRAKE*MAX_COUNT;
+    }
+  }
+}
 
 /******************************************************************************
  * float readCurrent()
@@ -264,27 +288,8 @@ float readVoltage() {
  * Calculates stall current for given velocity and voltage (Amperes)
  ******************************************************************************/
 float stallCurrent(float velocity, float voltage) {
-  return (I_STALL_A0 + I_STALL_A1*voltage)*exp(I_STALL_B1*abs(velocity));
+  return constrain((voltage/(R_MOT*MOT_FS)),0,MOT_I_MAX);
 }
-
-/******************************************************************************
- * float maxDuty(float voltage)
- *
- * Calculates maximum safe output duty cycle for given voltage [-1,1]
- ******************************************************************************/
-float maxDuty(float voltage) {
-  return MAX_DUTY_A0 + MAX_DUTY_A1*voltage + MAX_DUTY_A2*voltage*voltage;
-}
-
-/******************************************************************************
- * float minDuty(float voltage)
- *
- * Calculates minimum operational output duty cycle for given voltage [-1,1]
- ******************************************************************************/
-float minDuty(float voltage) {
-  return MIN_DUTY_A0 + MIN_DUTY_A1*voltage + MIN_DUTY_A2*voltage*voltage;
-}
-
 
 /******************************************************************************
  * void initializePWMOutput()
