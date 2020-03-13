@@ -60,12 +60,9 @@ int      OCLcounter = 0;
 dir_t    limit    = NONE;
 dir_t    lastdir  = NONE;
 dir_t    direction;
-
 float    velocity = 0.0f;
-
 DiscreteFilter speedfilter;
 DiscreteFilter currentfilter;
-
 
 
 ///////////
@@ -156,7 +153,7 @@ void loop() {
     lastcurrentfilterruntime = micros();
 
     // Update current filter
-    currentfilter.step(readCurrent()/stallCurrent(velocity, readVoltage()));
+    currentfilter.step(readCurrent()/stallCurrent(readVoltage()));
   } // end current lp filter
 }
 
@@ -169,19 +166,18 @@ void loop() {
  * void runSpeedFilter()
  *
  * Calculates and generates output based on latest PWM input
- * Runs at 20 Hz
+ * Runs at 200 Hz
  ******************************************************************************/
 void runSpeedFilter() {
   // Declare local variables
   float rawvelocity;
-  float voltage = readVoltage();
-  
+
   // Save pulsein locally
   int16_t pulsewidth;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
     pulsewidth = pulsein;
   }
-
+ 
   // Reject signals that are way off (i.e. const. 0 V, const. +5 V, noise)
   if ( pulsewidth >= INPUT_MIN && pulsewidth <= INPUT_MAX ) {
     // Remove neutral PWM bias & clamp to [-HALF_RANGE, HALF_RANGE]
@@ -287,7 +283,7 @@ float readVoltage() {
  *
  * Calculates stall current for given velocity and voltage (Amperes)
  ******************************************************************************/
-float stallCurrent(float velocity, float voltage) {
+float stallCurrent(float voltage) {
   return constrain((voltage/(R_MOT*MOT_FS)),0,MOT_I_MAX);
 }
 
