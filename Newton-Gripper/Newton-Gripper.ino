@@ -170,7 +170,7 @@ void loop() {
  ******************************************************************************/
 void runSpeedFilter() {
   // Declare local variables
-  float rawvelocity;
+  static float rawvelocity;
 
   // Save pulsein locally
   int16_t pulsewidth;
