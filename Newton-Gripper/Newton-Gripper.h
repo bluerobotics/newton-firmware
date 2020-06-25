@@ -4,8 +4,7 @@
 Title: Blue Robotics Newton Gripper Firmware
 
 Description: This code is the default firmware for the Blue Robotics
-Newton Gripper.  A PWM signal dictates the speed at which the gripper opens or
-closes, with speeds above 1500 (plus a deadzone) closing the jaws and those
+Newton Gripper.  A PWM signal dictates the  1500 (plus a deadzone) closing the jaws and those
 below 1500 (minus a deadzone) openning the jaws.  A current sensor detects when
 the endstops are reached or when an object is in the way of the jaws, and
 disables the motor until commanded to stop or reverse direction.
@@ -24,7 +23,7 @@ uploaded via the Arduino 1.0+ software.
 -------------------------------
 The MIT License (MIT)
 
-Copyright (c) 2017 Blue Robotics Inc.
+Copyright (c) 2020 Blue Robotics Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
