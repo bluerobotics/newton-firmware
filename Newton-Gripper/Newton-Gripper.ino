@@ -24,7 +24,7 @@ uploaded via the Arduino 1.0+ software.
 -------------------------------
 The MIT License (MIT)
 
-Copyright (c) 2017 Blue Robotics Inc.
+Copyright (c) 2020 Blue Robotics Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -52,7 +52,6 @@ THE SOFTWARE.
 // Global Variables
 volatile uint32_t pulsetime = 0;
 volatile int16_t  pulsein   = PWM_NEUTRAL;
-
 uint32_t lastspeedfilterruntime   = 0;
 uint32_t lastcurrentfilterruntime = 0;
 uint32_t lastOCLdetectionruntime = 0;
@@ -120,7 +119,7 @@ void loop() {
     }
   } // end pwm input check
     
-    //Set endstop condition if Motor Driver detects a fault 
+  //Set endstop condition if Motor Driver detects a fault 
   if ( (millis() - lastOCLdetectionruntime)/1000.0f > OCL_DT ) {
     // Set next filter runtime
     lastOCLdetectionruntime = millis();
@@ -157,7 +156,6 @@ void loop() {
   } // end current lp filter
 }
 
-
 ///////////////
 // Functions //
 ///////////////
@@ -174,21 +172,18 @@ void runSpeedFilter() {
 
   // Save pulsein locally
   int16_t pulsewidth;
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
     pulsewidth = pulsein;
   }
- 
+
   // Reject signals that are way off (i.e. const. 0 V, const. +5 V, noise)
   if ( pulsewidth >= INPUT_MIN && pulsewidth <= INPUT_MAX ) {
     // Remove neutral PWM bias & clamp to [-HALF_RANGE, HALF_RANGE]
     int16_t pw = constrain(pulsewidth - PWM_NEUTRAL, -HALF_RANGE, HALF_RANGE);
 
-    // Reject anything inside input deadzone
     if ( pw > INPUT_DZ ) {
-    // Map valid PWM signals to (0.0 to 1.0]
       rawvelocity = 1.0f;
     } else if ( pw < -INPUT_DZ ) {
-      // Map valid PWM signals to [-1.0 to 0.0)
       rawvelocity = -1.0f;
     } else {
       // Stop motor if input is within input deadzone
@@ -198,7 +193,7 @@ void runSpeedFilter() {
 
   // Filter velocity
   velocity = constrain(speedfilter.step(rawvelocity), -1.0f, 1.0f);
-   
+
   // Figure out the current direction of travel
   if (velocity > 0.05) {
       direction = OPEN;
@@ -239,18 +234,17 @@ void runSpeedFilter() {
  * Sets PWM output to motor controller
  ******************************************************************************/
 void setMotorOutput(dir_t direction, dir_t limit, float velocity) {
-    
     // Set output PWM timers
   if ( direction == OPEN && limit != OPEN) {
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-      OCR1A = fabs(velocity)*MAX_COUNT;
+      OCR1A = abs(velocity)*MAX_COUNT;
       OCR1B = 0;
     }
   } else if ( direction == CLOSE && limit != CLOSE) {
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
       OCR1A = 0;
-      OCR1B = fabs(velocity)*MAX_COUNT;
-    } 
+      OCR1B = abs(velocity)*MAX_COUNT;
+    }
   } else {
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
       OCR1A = BRAKE*MAX_COUNT;
